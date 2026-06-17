@@ -1,0 +1,12 @@
+{
+  "nav": {
+    "reservoir_anomaly": "ජලාශය විෂමතා",
+    "basin_dashboard": "ද්‍රෝණිය පාලක පුවරුව",
+    "alert_engine": "අනතුරු ඇඟවීම"
+  },
+  "common": {
+    "loading": "පූරණය වෙමින්…",
+    "error": "දෝෂයක් සිදු විය",
+    "last_updated": "අවසාන යාවත්කාලීන"
+  }
+}

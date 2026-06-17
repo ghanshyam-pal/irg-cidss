@@ -1,0 +1,26 @@
+{
+  "nav": {
+    "reservoir_anomaly": "Reservoir Anomaly",
+    "public_api": "Public Data API",
+    "community": "Community Portal",
+    "forecast_chart": "Forecast vs Observed",
+    "basin_dashboard": "Basin Dashboard",
+    "alert_engine": "Alert Engine",
+    "forecast_map": "Forecast Map",
+    "hydromet": "Hydromet Analysis",
+    "ai_assistant": "AI Assistant"
+  },
+  "alert_levels": {
+    "normal": "Normal",
+    "alert": "Alert",
+    "minor_flood": "Minor Flood",
+    "major_flood": "Major Flood",
+    "critical": "Critical"
+  },
+  "common": {
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "last_updated": "Last updated",
+    "no_data": "No data available"
+  }
+}
