@@ -1,16 +1,50 @@
 // Design 1 — Professional Light  (inspired by flood management dashboards)
 // Clean white cards, prominent alert strip, jurisdiction header, key insights panel
+//
+// ── LEAFLET SETUP ─────────────────────────────────────────────────────────
+// npm install leaflet react-leaflet
+// Add once in your app's root (e.g. main.jsx / App.jsx):
+//   import 'leaflet/dist/leaflet.css'
+// Put srilanka.geo.json next to this file (or adjust the import path below).
+// ─────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import {
+  MapContainer, GeoJSON, CircleMarker, Popup,
+  Tooltip as LeafletTooltip, useMap,
+} from 'react-leaflet'
+import {
   GAUGE_DATA, ALERT_STATUS, GAUGE_SERIES, RAINFALL_DATA,
   RESERVOIR_DATA, RECENT_ALERTS, FORECAST_7DAY,
 } from './data'
+import srilankaGeo from './srilanka.geo.json'
+
+// Sri Lanka bounding box (derived from the simplified boundary file)
+const SL_BOUNDS = [[5.7, 79.4], [10.05, 82.1]]   // [[south, west], [north, east]]
+const SL_CENTER = [7.87, 80.77]
+
+// ── Fallback coordinates for known stations mentioned in the alert cards ──
+// Replace / extend this with the real lat/lng you have for each gauge —
+// ideally just add `lat` / `lng` fields directly onto each row in GAUGE_DATA
+// in data.js instead of relying on this lookup.
+const FALLBACK_COORDS = {
+  'Millakanda': [6.5333, 80.1333],   // Kalu Ganga
+  'Kalu':        [6.65, 80.25],
+  'Kelani':      [6.95, 80.25],
+  'Nilwala':     [5.95, 80.55],
+  'Walawe':      [6.27, 80.84],
+}
+
+function resolveCoords(g) {
+  if (typeof g.lat === 'number' && typeof g.lng === 'number') return [g.lat, g.lng]
+  const key = Object.keys(FALLBACK_COORDS).find(k => g.name?.includes(k))
+  return key ? FALLBACK_COORDS[key] : null
+}
 
 const AlertBadge = ({ status, small }) => {
   const d = ALERT_STATUS[status] || ALERT_STATUS.NORMAL
@@ -24,6 +58,23 @@ const AlertBadge = ({ status, small }) => {
       <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.dot }} />
       {d.label}
     </span>
+  )
+}
+
+// Small control cluster (zoom +/-, reset view) that lives inside MapContainer
+// so it can reach the Leaflet map instance via useMap().
+function MapControls() {
+  const map = useMap()
+  const btnStyle = {
+    width: 28, height: 28, border: '1px solid #e2e8f0', background: '#fff',
+    borderRadius: 5, cursor: 'pointer', fontSize: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+  }
+  return (
+    <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000, display: 'flex', gap: 6 }}>
+      <button style={btnStyle} onClick={() => map.zoomIn()}>🔍+</button>
+      <button style={btnStyle} onClick={() => map.zoomOut()}>🔍-</button>
+      <button style={btnStyle} onClick={() => map.fitBounds(SL_BOUNDS)}>⛶</button>
+    </div>
   )
 }
 
@@ -103,51 +154,102 @@ export default function Design1() {
         {/* ── Main row: Map + Key Insights ── */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14, marginBottom: 14 }}>
 
-          {/* Map placeholder */}
+          {/* Map — real Sri Lanka boundary via Leaflet */}
           <div style={{
             background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0',
             overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
           }}>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Basin Map — Flood Status</span>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {['🔍+', '🔍-', '⛶'].map(b => (
-                  <button key={b} style={{ width: 28, height: 28, border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: 5, cursor: 'pointer', fontSize: 12 }}>{b}</button>
-                ))}
-              </div>
             </div>
-            {/* SVG map placeholder */}
-            <div style={{ position: 'relative', height: 320, background: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 40%, #e0f2fe 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="260" height="280" viewBox="0 0 260 280">
-                {/* Sri Lanka rough outline */}
-                <path d="M130,20 L155,35 L170,55 L175,80 L180,110 L178,140 L172,165 L165,190 L155,210 L140,230 L125,245 L110,255 L95,250 L80,235 L70,215 L65,190 L62,165 L65,140 L70,115 L78,88 L90,62 L105,40 Z"
-                  fill="#a7f3d0" stroke="#059669" strokeWidth="2" opacity="0.8" />
-                {/* Basin highlights */}
-                <ellipse cx="120" cy="140" rx="30" ry="20" fill="#fbbf24" opacity="0.4" />
-                <ellipse cx="140" cy="100" rx="22" ry="16" fill="#ef4444" opacity="0.35" />
-                <ellipse cx="105" cy="180" rx="18" ry="14" fill="#f97316" opacity="0.4" />
-                {/* Gauge dots */}
-                {[
-                  [140,95,'#ef4444'],[120,140,'#f59e0b'],[105,180,'#f97316'],
-                  [130,200,'#22c55e'],[90,130,'#22c55e'],[150,160,'#22c55e'],
-                ].map(([x,y,c],i) => (
-                  <g key={i}>
-                    <circle cx={x} cy={y} r="10" fill={c} opacity="0.25" />
-                    <circle cx={x} cy={y} r="5"  fill={c} />
-                  </g>
-                ))}
-                {/* Labels */}
-                <text x="148" y="90"  fontSize="9" fill="#7f1d1d" fontWeight="700">Kalu Ganga</text>
-                <text x="125" y="137" fontSize="9" fill="#92400e" fontWeight="700">Kelani</text>
-                <text x="108" y="198" fontSize="9" fill="#7c2d12" fontWeight="700">Nilwala</text>
-              </svg>
+
+            <div style={{ position: 'relative', height: 320 }}>
+              <MapContainer
+                center={SL_CENTER}
+                zoom={6.4}
+                minZoom={6.5}
+                maxZoom={11}
+                maxBounds={SL_BOUNDS}
+                maxBoundsViscosity={0.8}
+                zoomSnap={0.1}
+                scrollWheelZoom={false}
+                zoomControl={false}
+                attributionControl={false}
+                style={{
+                  height: '100%', width: '100%',
+                  background: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 40%, #e0f2fe 100%)',
+                }}
+              >
+                {/* No tile layer on purpose — keeps the clean card look.
+                    If you'd rather have a real basemap underneath, add e.g.:
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    (import TileLayer from 'react-leaflet' first) */}
+
+                <GeoJSON
+                  data={srilankaGeo}
+                  style={() => ({
+                    color: '#059669',
+                    weight: 1.5,
+                    fillColor: '#a7f3d0',
+                    fillOpacity: 0.8,
+                  })}
+                />
+
+                {GAUGE_DATA.map((g) => {
+                  const coords = resolveCoords(g)
+                  if (!coords) return null
+                  const d = ALERT_STATUS[g.status] || ALERT_STATUS.NORMAL
+                  const isSelected = g.id === selGauge
+                  return (
+                    <Fragment key={g.id}>
+                      {/* halo */}
+                      <CircleMarker
+                        center={coords}
+                        radius={isSelected ? 16 : 12}
+                        pathOptions={{ stroke: false, fillColor: d.dot, fillOpacity: 0.25 }}
+                        eventHandlers={{ click: () => setSelGauge(g.id) }}
+                      />
+                      {/* solid dot */}
+                      <CircleMarker
+                        center={coords}
+                        radius={isSelected ? 7 : 5}
+                        pathOptions={{
+                          color: '#fff', weight: isSelected ? 2 : 1,
+                          fillColor: d.dot, fillOpacity: 1,
+                        }}
+                        eventHandlers={{ click: () => setSelGauge(g.id) }}
+                      >
+                        <LeafletTooltip direction="top" offset={[0, -6]}>
+                          {g.name}
+                        </LeafletTooltip>
+                        <Popup>
+                          <div style={{ fontSize: 12, minWidth: 140 }}>
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>{g.name}</div>
+                            <div>Level: <strong>{g.level?.toFixed?.(2) ?? g.level}</strong> m</div>
+                            <div>Threshold: {g.threshold?.toFixed?.(1) ?? g.threshold} m</div>
+                            <div style={{ marginTop: 4 }}>
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, padding: '2px 6px',
+                                borderRadius: 4, background: d.bg, color: d.color,
+                              }}>{d.label}</span>
+                            </div>
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+                    </Fragment>
+                  )
+                })}
+
+                <MapControls />
+              </MapContainer>
+
               {/* Legend */}
               <div style={{
                 position: 'absolute', bottom: 12, left: 12,
                 background: 'rgba(255,255,255,0.92)', borderRadius: 7,
                 padding: '8px 12px', fontSize: 11,
                 display: 'flex', flexDirection: 'column', gap: 4,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)', zIndex: 1000,
               }}>
                 {[['#dc2626','Major Flood'],['#f97316','Minor Flood'],['#eab308','Alert'],['#22c55e','Normal']].map(([c,l]) => (
                   <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

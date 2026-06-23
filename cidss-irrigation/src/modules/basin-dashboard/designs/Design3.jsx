@@ -1,14 +1,28 @@
 // Design 3 — Map-First  (ArcGIS-dashboard style, like reference Image 1)
 // Large map dominates, collapsible layer panel on left, charts in right panel
+//
+// ── LEAFLET SETUP ─────────────────────────────────────────────────────────
+// npm install leaflet react-leaflet
+// Add once in your app's root (e.g. main.jsx / App.jsx):
+//   import 'leaflet/dist/leaflet.css'
+// Reuses the same srilanka.geo.json generated for Design 1 — put it next to
+// this file (or adjust the import path below).
+// ─────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
+import L from 'leaflet'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import {
+  MapContainer, GeoJSON, CircleMarker, Circle, Marker, Popup,
+  Tooltip as LeafletTooltip, useMap,
+} from 'react-leaflet'
+import {
   GAUGE_DATA, ALERT_STATUS, RAINFALL_DATA, RESERVOIR_DATA, RECENT_ALERTS,
 } from './data'
+import srilankaGeo from './srilanka.geo.json'
 
 const BASIN_COLORS = { Kalu: '#3b82f6', Kelani: '#8b5cf6', Mahaweli: '#06b6d4', Nilwala: '#f59e0b', Other: '#94a3b8' }
 
@@ -27,6 +41,50 @@ const LAYER_ITEMS = [
   { id: 'gnDiv',     label: 'GN Divisions',      color: '#f59e0b', active: false },
   { id: 'infra',     label: 'Infrastructure',    color: '#64748b', active: false },
 ]
+// Note: 'rainfall', 'gnDiv' and 'infra' are toggleable but have no source
+// geometry wired up yet (no IDW raster / GN boundary / infrastructure layer
+// in scope). Add a <GeoJSON> or raster overlay for each when that data exists.
+
+const SL_BOUNDS = [[5.7, 79.4], [10.05, 82.1]]   // [[south, west], [north, east]]
+const SL_CENTER = [7.7, 80.77]
+
+// Approximate basin centroids — used only as a fallback so gauges render
+// somewhere sensible on the map. Add real `lat` / `lng` fields to each row
+// in GAUGE_DATA for accurate placement; those always take priority below.
+const BASIN_CENTER_COORDS = {
+  Kalu:     [6.62, 80.20],
+  Kelani:   [6.95, 80.25],
+  Mahaweli: [7.45, 80.85],
+  Nilwala:  [5.97, 80.55],
+  Walawe:   [6.40, 80.85],
+}
+
+function resolveGaugeCoords(g) {
+  if (typeof g.lat === 'number' && typeof g.lng === 'number') return [g.lat, g.lng]
+  const base = BASIN_CENTER_COORDS[g.basin]
+  if (!base) return null
+  // deterministic small spread so multiple gauges in the same basin don't stack on one point
+  const hash = String(g.id || '').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
+  const jitterLat = ((hash % 7) - 3) * 0.045
+  const jitterLng = ((hash % 5) - 2) * 0.045
+  return [base[0] + jitterLat, base[1] + jitterLng]
+}
+
+// Reservoirs aren't tied to a basin field in this dataset, and guessing real
+// dam locations by name would risk placing them wrong — so a reservoir is
+// only plotted once you add real `lat` / `lng` fields onto its row in
+// RESERVOIR_DATA. Until then the Reservoirs layer toggle simply renders nothing.
+function resolveReservoirCoords(r) {
+  if (typeof r.lat === 'number' && typeof r.lng === 'number') return [r.lat, r.lng]
+  return null
+}
+
+const squareIcon = (color) => L.divIcon({
+  className: '',
+  html: `<div style="width:16px;height:16px;border-radius:3px;background:${color};opacity:0.85;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,0.35);">R</div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+})
 
 const AlertBadge = ({ status }) => {
   const d = ALERT_STATUS[status] || ALERT_STATUS.NORMAL
@@ -37,15 +95,36 @@ const AlertBadge = ({ status }) => {
   )
 }
 
+// Zoom / reset-view buttons that live inside MapContainer so they can reach
+// the Leaflet map instance via useMap(). Visually matches the original ＋ － ⛶ buttons.
+function MapZoomControls() {
+  const map = useMap()
+  const btnStyle = {
+    width: 32, height: 32, background: '#fff', border: '1px solid #e2e8f0',
+    borderRadius: 6, fontSize: 14, cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+  }
+  return (
+    <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <button style={btnStyle} onClick={() => map.zoomIn()}>＋</button>
+      <button style={btnStyle} onClick={() => map.zoomOut()}>－</button>
+      <button style={btnStyle} onClick={() => map.fitBounds(SL_BOUNDS)}>⛶</button>
+    </div>
+  )
+}
+
 export default function Design3() {
   const [layers, setLayers]     = useState(LAYER_ITEMS)
   const [activeTab, setActiveTab] = useState('charts')
   const [selBasin, setSelBasin]   = useState(null)
+  const [selGauge, setSelGauge]   = useState(null)
 
   const toggleLayer = (id) =>
     setLayers(layers.map(l => l.id === id ? { ...l, active: !l.active } : l))
 
+  const isLayerActive = (id) => layers.find(l => l.id === id)?.active
+
   const activeGauges = GAUGE_DATA.filter(g => !selBasin || g.basin === selBasin)
+  const floodGauges = activeGauges.filter(g => g.status === 'MAJOR_FLOOD' || g.status === 'MINOR_FLOOD')
 
   return (
     <div style={{ display: 'flex', height: '100%', background: '#f0f4f8', fontFamily: 'inherit', gap: 0, minHeight: 'calc(100vh - 80px)' }}>
@@ -154,58 +233,120 @@ export default function Design3() {
           </div>
         </div>
 
-        {/* SVG Map */}
+        {/* Map — real Sri Lanka boundary via Leaflet */}
         <div style={{
           position: 'absolute', inset: 0, top: 44,
           background: 'linear-gradient(160deg, #dbeafe 0%, #bfdbfe 30%, #e0f2fe 60%, #cffafe 100%)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <svg width="380" height="480" viewBox="0 0 380 480" style={{ filter: 'drop-shadow(0 4px 20px rgba(0,0,0,0.12))' }}>
-            {/* Sri Lanka shape */}
-            <path d="M190,30 L225,50 L248,78 L258,112 L265,150 L262,192 L252,232 L238,268 L220,300 L200,328 L178,345 L155,355 L132,348 L112,330 L98,305 L90,275 L87,242 L92,208 L100,172 L112,138 L128,102 L148,72 L168,50 Z"
-              fill="#93c5fd" stroke="#2563eb" strokeWidth="2" opacity="0.85" />
+          <MapContainer
+            center={SL_CENTER}
+            zoom={7.6}
+            minZoom={6.5}
+            maxZoom={12}
+            maxBounds={SL_BOUNDS}
+            maxBoundsViscosity={0.8}
+            zoomSnap={0.1}
+            zoomControl={false}
+            attributionControl={false}
+            style={{ height: '100%', width: '100%', background: 'transparent' }}
+          >
+            {/* No tile layer on purpose — keeps the clean illustrative look.
+                If you'd rather have a real basemap underneath, add e.g.:
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                (import TileLayer from 'react-leaflet' first) */}
 
-            {/* Flood zones */}
-            <ellipse cx="185" cy="148" rx="38" ry="28" fill="#ef4444" opacity="0.35" />
-            <ellipse cx="210" cy="200" rx="28" ry="20" fill="#f97316" opacity="0.3" />
-            <ellipse cx="165" cy="260" rx="24" ry="18" fill="#ef4444" opacity="0.35" />
-            <ellipse cx="190" cy="310" rx="20" ry="14" fill="#22c55e" opacity="0.25" />
-            <ellipse cx="155" cy="175" rx="18" ry="14" fill="#eab308" opacity="0.3} " />
+            <GeoJSON
+              data={srilankaGeo}
+              style={() => ({
+                color: '#2563eb',
+                weight: 2,
+                fillColor: '#93c5fd',
+                fillOpacity: 0.55,
+              })}
+            />
 
-            {/* River lines */}
-            <path d="M190,30 Q185,90 185,148 Q182,200 175,260" stroke="#1d4ed8" strokeWidth="2" fill="none" opacity="0.5" />
-            <path d="M220,80 Q215,130 210,200 Q205,240 200,300" stroke="#0891b2" strokeWidth="1.5" fill="none" opacity="0.45" />
+            {/* Flood Extent — illustrative radius around stations currently
+                reporting Minor/Major flood. Swap for a real flood-extent
+                GeoJSON layer once you have one. */}
+            {isLayerActive('flood') && floodGauges.map((g) => {
+              const coords = resolveGaugeCoords(g)
+              if (!coords) return null
+              const d = ALERT_STATUS[g.status]
+              return (
+                <Circle
+                  key={`flood-${g.id}`}
+                  center={coords}
+                  radius={g.status === 'MAJOR_FLOOD' ? 9000 : 5500}
+                  pathOptions={{ stroke: false, fillColor: d.dot, fillOpacity: 0.28 }}
+                />
+              )
+            })}
 
-            {/* Gauge markers */}
-            {[
-              [185,148,'#ef4444','G01','4.82m'],
-              [210,200,'#eab308','G02','3.21m'],
-              [165,260,'#ef4444','G08','5.10m'],
-              [200,130,'#22c55e','G03','2.10m'],
-              [155,175,'#eab308','G05','3.78m'],
-              [220,280,'#22c55e','G04','1.95m'],
-            ].map(([x,y,c,id,val]) => (
-              <g key={id} style={{ cursor: 'pointer' }}>
-                <circle cx={x} cy={y} r="16" fill={c} opacity="0.2" />
-                <circle cx={x} cy={y} r="8"  fill={c} opacity="0.8" />
-                <circle cx={x} cy={y} r="3"  fill="#fff" />
-                <text x={x+12} y={y-4}  fontSize="9" fill="#1e293b" fontWeight="700">{id}</text>
-                <text x={x+12} y={y+7} fontSize="8" fill="#64748b">{val}</text>
-              </g>
-            ))}
+            {/* River Gauges */}
+            {isLayerActive('gauges') && activeGauges.map((g) => {
+              const coords = resolveGaugeCoords(g)
+              if (!coords) return null
+              const d = ALERT_STATUS[g.status] || ALERT_STATUS.NORMAL
+              const isSelected = g.id === selGauge
+              return (
+                <Fragment key={g.id}>
+                  <CircleMarker
+                    center={coords}
+                    radius={isSelected ? 14 : 10}
+                    pathOptions={{ stroke: false, fillColor: d.dot, fillOpacity: 0.2 }}
+                    eventHandlers={{ click: () => setSelGauge(g.id) }}
+                  />
+                  <CircleMarker
+                    center={coords}
+                    radius={isSelected ? 8 : 6}
+                    pathOptions={{ color: '#fff', weight: isSelected ? 2 : 1, fillColor: d.dot, fillOpacity: 0.9 }}
+                    eventHandlers={{ click: () => setSelGauge(g.id) }}
+                  >
+                    <LeafletTooltip direction="top" offset={[0, -8]}>
+                      {g.id} · {g.level?.toFixed?.(2) ?? g.level}m
+                    </LeafletTooltip>
+                    <Popup>
+                      <div style={{ fontSize: 12, minWidth: 140 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>{g.name || g.id}</div>
+                        <div>Basin: {g.basin || '—'}</div>
+                        <div>Level: <strong>{g.level?.toFixed?.(2) ?? g.level}</strong> m</div>
+                        <div>Threshold: {g.threshold?.toFixed?.(1) ?? g.threshold} m</div>
+                        <div style={{ marginTop: 4 }}>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: '2px 6px',
+                            borderRadius: 4, background: d.bg, color: d.color,
+                          }}>{d.label}</span>
+                        </div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                </Fragment>
+              )
+            })}
 
-            {/* Reservoir markers */}
-            {[[155,100,'#06b6d4'],[225,165,'#06b6d4']].map(([x,y,c],i) => (
-              <g key={i}>
-                <rect x={x-8} y={y-8} width="16" height="16" rx="3" fill={c} opacity="0.8" />
-                <text x={x} y={y+4} fontSize="8" fill="#fff" textAnchor="middle" fontWeight="700">R</text>
-              </g>
-            ))}
-          </svg>
+            {/* Reservoirs — only plots once lat/lng exist on the row, see resolveReservoirCoords() above */}
+            {isLayerActive('reservoirs') && RESERVOIR_DATA.map((r) => {
+              const coords = resolveReservoirCoords(r)
+              if (!coords) return null
+              const c = r.pct > 90 ? '#ef4444' : r.pct > 75 ? '#f59e0b' : '#06b6d4'
+              return (
+                <Marker key={r.name} position={coords} icon={squareIcon(c)}>
+                  <Popup>
+                    <div style={{ fontSize: 12, minWidth: 130 }}>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>{r.name}</div>
+                      <div>Storage: <strong>{r.pct}%</strong></div>
+                    </div>
+                  </Popup>
+                </Marker>
+              )
+            })}
+
+            <MapZoomControls />
+          </MapContainer>
 
           {/* Map legend */}
           <div style={{
-            position: 'absolute', bottom: 16, left: 16,
+            position: 'absolute', bottom: 16, left: 16, zIndex: 1000,
             background: 'rgba(255,255,255,0.95)', borderRadius: 8, padding: '10px 14px',
             boxShadow: '0 2px 12px rgba(0,0,0,0.12)', fontSize: 11,
           }}>
@@ -223,19 +364,6 @@ export default function Design3() {
               <span>⬤ Gauge</span>
               <span style={{ color: '#06b6d4' }}>■ Reservoir</span>
             </div>
-          </div>
-
-          {/* Zoom controls */}
-          <div style={{
-            position: 'absolute', top: 16, right: 16,
-            display: 'flex', flexDirection: 'column', gap: 4,
-          }}>
-            {['＋','－','⛶'].map((b) => (
-              <button key={b} style={{
-                width: 32, height: 32, background: '#fff', border: '1px solid #e2e8f0',
-                borderRadius: 6, fontSize: 14, cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
-              }}>{b}</button>
-            ))}
           </div>
         </div>
       </div>

@@ -55,7 +55,7 @@ export default function M5BasinDashboardPage() {
           ))}
         </div>
         <div style={{ marginLeft: 'auto', fontSize: 11, color: '#94a3b8' }}>
-          Select a design to present to the client
+          
         </div>
       </div>
 
