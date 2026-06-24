@@ -1,111 +1,129 @@
-// src/pages/LoginPage.jsx
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useStore } from '@/store'
-import api from '@/services/api'
+import {
+  Droplets,
+  CloudRain,
+  Waves,
+  ShieldCheck,
+} from "lucide-react";
+
+import RainEffect from "./RainEffect";
+import "./LoginPage.css";
 
 export default function LoginPage() {
-  const navigate = useNavigate()
-  const login = useStore((s) => s.login)
-  const [form, setForm] = useState({ username: '', password: '' })
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const handleSubmit = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const { data } = await api.post('/auth/login', form)
-      login(data.token, data.user)
-      navigate('/')
-    } catch {
-      setError('Invalid credentials. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: '#0d2a4a',
-    }}>
-      <div style={{
-        background: '#fff', borderRadius: 12, padding: '40px 36px',
-        width: 360, boxShadow: '0 20px 60px rgb(0 0 0 / 0.25)',
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{
-            width: 48, height: 48, background: '#1d4ed8', borderRadius: 12,
-            margin: '0 auto 12px', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', color: '#fff', fontSize: 22,
-          }}>💧</div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: '#1e293b' }}>
-            Irrigation Tools
+    <div className="login-container">
+      {/* LEFT SIDE */}
+      <div className="hero-section">
+        <RainEffect />
+
+        <div className="overlay"></div>
+
+        <div className="hero-content">
+          <img
+            src="/images/srilanka-emblem.png"
+            alt="Sri Lanka Emblem"
+            className="emblem"
+          />
+
+          <h1>
+            Hydrological Information
+            <span> Management System</span>
           </h1>
-          <p style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-            Irrigation Department of Sri Lanka
+
+          <p>
+            Department of Irrigation - Democratic Socialist
+            Republic of Sri Lanka
           </p>
-        </div>
 
-        {error && (
-          <div style={{
-            background: '#fef2f2', border: '1px solid #fecaca',
-            borderRadius: 6, padding: '10px 12px', marginBottom: 16,
-            fontSize: 13, color: '#dc2626',
-          }}>
-            {error}
+          <div className="stats">
+            <div className="stat-card">
+              <Droplets size={24} />
+              <div>
+                <h4>Reservoir</h4>
+                <span>Live Monitoring</span>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <CloudRain size={24} />
+              <div>
+                <h4>Rainfall</h4>
+                <span>Real-Time Data</span>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <Waves size={24} />
+              <div>
+                <h4>River Flow</h4>
+                <span>Analytics</span>
+              </div>
+            </div>
           </div>
-        )}
-
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>
-            Username
-          </label>
-          <input
-            type="text"
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-            style={{
-              width: '100%', padding: '9px 12px', fontSize: 14,
-              border: '1px solid #d1d5db', borderRadius: 6,
-              outline: 'none', boxSizing: 'border-box',
-            }}
-            placeholder="operator@irrigation.gov.lk"
-          />
         </div>
 
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 4 }}>
-            Password
-          </label>
-          <input
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            style={{
-              width: '100%', padding: '9px 12px', fontSize: 14,
-              border: '1px solid #d1d5db', borderRadius: 6,
-              outline: 'none', boxSizing: 'border-box',
-            }}
-            placeholder="••••••••"
-          />
-        </div>
-
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{
-            width: '100%', padding: '10px', background: '#1d4ed8',
-            color: '#fff', border: 'none', borderRadius: 6,
-            fontSize: 14, fontWeight: 600, cursor: 'pointer',
-            opacity: loading ? 0.7 : 1,
-          }}
+        <svg
+          className="wave"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 1440 320"
         >
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
+          <path
+            fill="#ffffff"
+            fillOpacity="1"
+            d="M0,224L60,218.7C120,213,240,203,360,186.7C480,171,600,149,720,154.7C840,160,960,192,1080,192C1200,192,1320,160,1380,144L1440,128L1440,320L0,320Z"
+          />
+        </svg>
+      </div>
+
+      {/* LOGIN SECTION */}
+      <div className="login-section">
+        <div className="login-card">
+          <ShieldCheck
+            className="login-icon"
+            size={50}
+          />
+
+          <h2>Welcome Back</h2>
+          <p>
+            Sign in to access hydrological monitoring
+            services
+          </p>
+
+          <form>
+            <div className="input-group">
+              <label>Username</label>
+              <input
+                type="text"
+                placeholder="Enter username"
+              />
+            </div>
+
+            <div className="input-group">
+              <label>Password</label>
+              <input
+                type="password"
+                placeholder="Enter password"
+              />
+            </div>
+
+            <div className="options">
+              <label>
+                <input type="checkbox" />
+                Remember Me
+              </label>
+
+              <a href="#">Forgot Password?</a>
+            </div>
+
+            <button type="submit">
+              Login
+            </button>
+          </form>
+
+          <div className="footer-text">
+            Department of Irrigation • Sri Lanka
+          </div>
+        </div>
       </div>
     </div>
-  )
+  );
 }

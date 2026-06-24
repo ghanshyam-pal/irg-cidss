@@ -1,0 +1,163 @@
+.rain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Front rain (main visibility) */
+.front-row {
+  z-index: 2;
+}
+
+/* Back rain (lighter depth layer) */
+.back-row {
+  z-index: 1;
+  opacity: 0.35;
+}
+
+/* ===================== */
+/* DROP (rain line)      */
+/* ===================== */
+.drop {
+  position: absolute;
+  bottom: 100%;
+  width: 18px;
+  height: 140px;
+
+  animation-name: drop;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes drop {
+  0% {
+    transform: translateY(0vh);
+  }
+
+  75% {
+    transform: translateY(100vh);
+  }
+
+  100% {
+    transform: translateY(100vh);
+  }
+}
+
+/* ===================== */
+/* STEM (rain streak)    */
+/* ===================== */
+.stem {
+  width: 1.5px;
+  height: 60%;
+  margin-left: 8px;
+
+  /* BLUE WATER RAIN COLOR */
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 200, 255, 0),
+    rgba(0, 170, 255, 0.9),
+    rgba(0, 90, 200, 0.2)
+  );
+
+  /* glow for visibility */
+  filter: drop-shadow(0 0 3px rgba(0, 170, 255, 0.7));
+
+  animation-name: stem;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes stem {
+  0% {
+    opacity: 1;
+  }
+
+  65% {
+    opacity: 1;
+  }
+
+  75% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ===================== */
+/* SPLAT (impact effect) */
+/* ===================== */
+.splat {
+  width: 16px;
+  height: 10px;
+
+  border-top: 2px solid rgba(0, 170, 255, 0.75);
+  border-radius: 50%;
+
+  box-shadow: 0 0 8px rgba(0, 170, 255, 0.4);
+
+  opacity: 1;
+  transform: scale(0);
+
+  animation-name: splat;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes splat {
+  0% {
+    opacity: 1;
+    transform: scale(0);
+  }
+
+  80% {
+    opacity: 1;
+    transform: scale(0);
+  }
+
+  90% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+/* ===================== */
+/* OPTIONAL DARK GLOW BG */
+/* (helps visibility on white UI) */
+/* ===================== */
+.rain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+
+  background: radial-gradient(
+    circle at top,
+    rgba(0, 80, 160, 0.18),
+    rgba(0, 0, 0, 0)
+  );
+
+  z-index: 0;
+}
+
+/* ===================== */
+/* RESPONSIVE SAFETY     */
+/* ===================== */
+@media (max-width: 768px) {
+  .drop {
+    width: 14px;
+    height: 120px;
+  }
+
+  .stem {
+    margin-left: 6px;
+  }
+}
