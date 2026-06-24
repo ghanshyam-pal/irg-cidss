@@ -1,19 +1,3 @@
-// src/modules/m5-basin-dashboard/index.jsx
-// Design selector — wraps Design 1, 2, 3
-
-
-
-
-// export default function M5BasinDashboardPage() 
- // Design 1 — Professional Light  (inspired by flood management dashboards)
-// Clean white cards, prominent alert strip, jurisdiction header, key insights panel
-//
-// ── LEAFLET SETUP ─────────────────────────────────────────────────────────
-// npm install leaflet react-leaflet
-// Add once in your app's root (e.g. main.jsx / App.jsx):
-//   import 'leaflet/dist/leaflet.css'
-// Put srilanka.geo.json next to this file (or adjust the import path below).
-// ─────────────────────────────────────────────────────────────────────────
 
 import { useState, Fragment } from 'react'
 import {

@@ -14,86 +14,154 @@ export const ALERT_LEVELS = {
 }
 
 // Module registry — drives sidebar navigation and lazy routes
+// export const MODULES = [
+//   {
+//     id: 'm1',
+//     key: 'reservoir-anomaly',
+//     label: 'Reservoir Anomaly',
+//     icon: 'gauge',
+//     path: '/reservoir-anomaly',
+//     priority: 1,
+//     phase: 1,
+//   },
+//   {
+//     id: 'm2',
+//     key: 'public-api',
+//     label: 'Public Data API',
+//     icon: 'api',
+//     path: '/public-api',
+//     priority: 1,
+//     phase: 1,
+//   },
+//   {
+//     id: 'm3',
+//     key: 'community',
+//     label: 'Community Portal',
+//     icon: 'people',
+//     path: '/community',
+//     priority: 1,
+//     phase: 1,
+//   },
+//   {
+//     id: 'm4',
+//     key: 'forecast-chart',
+//     label: 'Forecast vs Observed',
+//     icon: 'chart-line',
+//     path: '/forecast-chart',
+//     priority: 2,
+//     phase: 2,
+//   },
+//   {
+//     id: 'm5',
+//     key: 'basin-dashboard',
+//     label: 'Basin Dashboard',
+//     icon: 'map',
+//     path: '/basin-dashboard',
+//     priority: 2,
+//     phase: 2,
+//   },
+//   {
+//     id: 'm6',
+//     key: 'alert-engine',
+//     label: 'Alert Engine',
+//     icon: 'bell',
+//     path: '/alert-engine',
+//     priority: 3,
+//     phase: 3,
+//   },
+//   {
+//     id: 'm7',
+//     key: 'forecast-map',
+//     label: 'Forecast Map',
+//     icon: 'layers',
+//     path: '/forecast-map',
+//     priority: 3,
+//     phase: 3,
+//   },
+//   {
+//     id: 'm8',
+//     key: 'hydromet',
+//     label: 'Hydromet Analysis',
+//     icon: 'rain',
+//     path: '/hydromet',
+//     priority: 3,
+//     phase: 3,
+//   },
+//   {
+//     id: 'm9',
+//     key: 'ai-assistant',
+//     label: 'AI Assistant',
+//     icon: 'sparkles',
+//     path: '/ai-assistant',
+//     priority: 3,
+//     phase: 3,
+//   },
+// ]
+
+// src/config.js  (excerpt — merge into your existing MODULES export)
+//
+// The sidebar now reads `children` on a module. If a module has a
+// `children` array, it renders as an expandable parent and its own
+// `path` is not linked directly. Modules without `children` behave
+// exactly as before (standalone links).
+
 export const MODULES = [
-  {
-    id: 'm1',
-    key: 'reservoir-anomaly',
-    label: 'Reservoir Anomaly',
-    icon: 'gauge',
-    path: '/reservoir-anomaly',
-    priority: 1,
-    phase: 1,
-  },
-  {
-    id: 'm2',
-    key: 'public-api',
-    label: 'Public Data API',
-    icon: 'api',
-    path: '/public-api',
-    priority: 1,
-    phase: 1,
-  },
-  {
-    id: 'm3',
-    key: 'community',
-    label: 'Community Portal',
-    icon: 'people',
-    path: '/community',
-    priority: 1,
-    phase: 1,
-  },
-  {
-    id: 'm4',
-    key: 'forecast-chart',
-    label: 'Forecast vs Observed',
-    icon: 'chart-line',
-    path: '/forecast-chart',
-    priority: 2,
-    phase: 2,
-  },
+
+  // ── Parent: Basin Dashboard ──────────────────────────────────
   {
     id: 'm5',
-    key: 'basin-dashboard',
     label: 'Basin Dashboard',
-    icon: 'map',
-    path: '/basin-dashboard',
-    priority: 2,
-    phase: 2,
+    phase: 1,
+    children: [
+      { id: 'm5-overview', label: 'Overview',           path: '/basin-dashboard/overview' },
+      { id: 'm5-map',      label: 'State & Basin Map',  path: '/basin-dashboard/map' },
+      { id: 'm5-river',    label: 'River Gauges',       path: '/basin-dashboard/river-gauges' },
+      { id: 'm5-rain',     label: 'Rain Gauges',        path: '/basin-dashboard/rain-gauges' },
+    ],
   },
+
+  // ── Parent: Forecast & Discharge ────────────────────────────
+  {
+    id: 'm4',
+    label: 'Forecast & Discharge',
+    phase: 1,
+    children: [
+      { id: 'm4-forecast', label: 'Forecast vs Observed', path: '/forecast-discharge/forecast-vs-observed' },
+      { id: 'm4-discharge', label: 'Discharge',            path: '/forecast-discharge/discharge' },
+    ],
+  },
+
+  // ── Parent: Alert Engine ─────────────────────────────────────
   {
     id: 'm6',
-    key: 'alert-engine',
     label: 'Alert Engine',
-    icon: 'bell',
-    path: '/alert-engine',
-    priority: 3,
-    phase: 3,
+    phase: 1,
+    children: [
+      { id: 'm6-live',     label: 'Live Alerts', path: '/alert-engine/live' },
+      { id: 'm6-advisory', label: 'Advisory',    path: '/alert-engine/advisory' },
+    ],
   },
+
+  // ── Parent: Flood Forecast Map ───────────────────────────────
   {
     id: 'm7',
-    key: 'forecast-map',
-    label: 'Forecast Map',
-    icon: 'layers',
-    path: '/forecast-map',
-    priority: 3,
-    phase: 3,
+    label: 'Flood Forecast Map',
+    phase: 1,
+    children: [
+      { id: 'm7-live',       label: 'Live Forecast',         path: '/flood-forecast-map/live' },
+      { id: 'm7-historical', label: 'Historical Flood Maps', path: '/flood-forecast-map/historical' },
+    ],
   },
-  {
-    id: 'm8',
-    key: 'hydromet',
-    label: 'Hydromet Analysis',
-    icon: 'rain',
-    path: '/hydromet',
-    priority: 3,
-    phase: 3,
-  },
-  {
-    id: 'm9',
-    key: 'ai-assistant',
-    label: 'AI Assistant',
-    icon: 'sparkles',
-    path: '/ai-assistant',
-    priority: 3,
-    phase: 3,
-  },
+
+  // ── Standalone items ─────────────────────────────────────────
+  { id: 'm1', label: 'Reservoir Anomaly', path: '/reservoir-anomaly', phase: 2 },
+  { id: 'm2', label: 'Public Data API',   path: '/public-data-api',   phase: 2 },
+  { id: 'm3', label: 'Community Portal',  path: '/community-portal',  phase: 2 },
+
+
+
+  // ── Standalone items ─────────────────────────────────────────
+  { id: 'm8',  label: 'Hydromet Analysis', path: '/hydromet-analysis', phase: 3 },
+  { id: 'm9',  label: 'AI Assistant',      path: '/ai-assistant',      phase: 3 },
+  { id: 'm10', label: 'Reports & Archive', path: '/reports-archive',  phase: 3 },
 ]

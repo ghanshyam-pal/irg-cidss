@@ -21,7 +21,7 @@
   z-index: 10;
 }
 
-.open .sidebar     { width: 252px; }
+.open .sidebar     { width: 264px; }
 .collapsed .sidebar { width: 64px; }
 
 /* Brand */
@@ -152,6 +152,12 @@
   margin: 1px 8px;
   border-radius: 8px;
   position: relative;
+  width: calc(100% - 16px);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
 }
 
 .navItem:hover {
@@ -207,6 +213,117 @@
   align-items: center;
   justify-content: center;
   padding: 0 4px;
+  flex-shrink: 0;
+}
+
+/* ── Parent (expandable) nav items ── */
+.navParentBlock {
+  display: flex;
+  flex-direction: column;
+}
+
+.navParent {
+  /* same base look as navItem, plus chevron */
+}
+
+.navChevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #4a7fad;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s;
+  display: inline-block;
+}
+
+.navParent:hover .navChevron { color: #94c5e8; }
+.navParent.active .navChevron { color: #60a5fa; }
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.navChildren {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  margin: 0 8px 0 0;
+  position: relative;
+}
+
+/* connecting rail for the sub-items */
+.navChildren::before {
+  content: '';
+  position: absolute;
+  left: 27px;
+  top: 2px;
+  bottom: 10px;
+  width: 1px;
+  background: rgba(255,255,255,0.09);
+}
+
+.navChildItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 12px 0 27px;
+  margin: 1px 0 1px 8px;
+  font-size: 12.5px;
+  color: #6e96b8;
+  text-decoration: none;
+  border-radius: 7px;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+  white-space: nowrap;
+}
+
+.navChildItem:hover {
+  background: rgba(255,255,255,0.05);
+  color: #c8dff0;
+}
+
+.navChildDot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #3a5f80;
+  margin-left: 6px;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.navChildItem:hover .navChildDot {
+  background: #7da5c7;
+}
+
+.navChildItem.activeChild {
+  background: rgba(37,99,235,0.14);
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+.navChildItem.activeChild .navChildDot {
+  background: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.22);
+}
+
+.navChildLabel { overflow: hidden; text-overflow: ellipsis; }
+
+.navBadgeSmall {
+  margin-left: auto;
+  background: #ef4444;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
   flex-shrink: 0;
 }
 
@@ -297,6 +414,17 @@
   font-weight: 600;
   color: #1e293b;
   margin: 0;
+}
+
+.pageTitleParent {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.pageTitleSep {
+  color: #cbd5e1;
+  font-weight: 400;
+  margin: 0 1px;
 }
 
 .headerBreadcrumb {
