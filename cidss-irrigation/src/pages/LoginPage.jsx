@@ -4,6 +4,8 @@ import {
   Waves,
   ShieldCheck,
 } from "lucide-react";
+// import sl_logo from "../../sl.png"
+import sl_logo from "../data/images/sl_logo1.png"
 
 import RainEffect from "./RainEffect";
 import "./LoginPage.css";
@@ -19,7 +21,7 @@ export default function LoginPage() {
 
         <div className="hero-content">
           <img
-            src="/images/srilanka-emblem.png"
+            src={sl_logo}
             alt="Sri Lanka Emblem"
             className="emblem"
           />
