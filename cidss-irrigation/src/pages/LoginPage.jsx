@@ -27,8 +27,8 @@ export default function LoginPage() {
           />
 
           <h1>
-            Hydrological Information
-            <span> Management System</span>
+            Co-production of Impact-based  
+            <span>Decision Support System</span>
           </h1>
 
           <p>
