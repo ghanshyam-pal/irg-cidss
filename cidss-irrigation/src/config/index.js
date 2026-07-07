@@ -131,6 +131,39 @@ export const MODULES = [
     ],
   },
 
+
+  {
+    id: 'm11',
+    label: 'Gauge Management',
+    phase: 1,
+    children: [
+      { id: 'm11-fleet', label: 'fleet operation', path: '/gauge-management/fleet-operation' },
+      // { id: 'm4-discharge', label: 'Discharge',            path: '/forecast-discharge/discharge' },
+    ],
+  },
+
+
+  {
+    id: 'm12',
+    label: 'Historical Data',
+    phase: 1,
+    children: [
+      { id: 'm12-fleet', label: 'Historical Data', path: '/historical-data/history' },
+      // { id: 'm4-discharge', label: 'Discharge',            path: '/forecast-discharge/discharge' },
+    ],
+  },
+
+
+  {
+    id: 'm13',
+    label: 'Impact Forecast',
+    phase: 1,
+    children: [
+      { id: 'm13-fleet', label: 'Impact Forecast', path: '/impact-forecast/impact' },
+      // { id: 'm4-discharge', label: 'Discharge',            path: '/forecast-discharge/discharge' },
+    ],
+  },
+
   // ── Parent: Alert Engine ─────────────────────────────────────
   {
     id: 'm6',
@@ -154,7 +187,15 @@ export const MODULES = [
   },
 
   // ── Standalone items ─────────────────────────────────────────
-  { id: 'm1', label: 'Reservoir Anomaly', path: '/reservoir-anomaly', phase: 2 },
+  { id: 'm1', 
+    label: 'Reservoir Anomaly', 
+    // path: '/reservoir-anomaly', 
+    phase: 2,
+    children: [
+        { id: 'm1-live',       label: 'Reservior Mgmt',         path: '/Reservoir-Anomaly-map/mgmt' },
+        // { id: 'm7-historical', label: 'Historical Flood Maps', path: '/flood-forecast-map/historical' },
+      ],
+   },
   { id: 'm2', label: 'Public Data API',   path: '/public-data-api',   phase: 2 },
   { id: 'm3', label: 'Community Portal',  path: '/community-portal',  phase: 2 },
 

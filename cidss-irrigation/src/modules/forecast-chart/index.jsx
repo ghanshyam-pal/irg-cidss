@@ -1,563 +1,503 @@
-// src/modules/m4-forecast-chart/index.jsx
-// M4 — Forecast vs Observed Chart Overlay
-// Dual-line charts per gauge: observed (solid) vs forecast horizons (dashed)
-// All dummy data — wire to /api/v1/forecast and /api/v1/gauges later
-
 import { useState, useMemo } from 'react'
 import {
-  ComposedChart, Line, Area, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ReferenceLine, Brush,
+  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot,
+  BarChart, Bar, Cell,
 } from 'recharts'
+import {
+  generateEnsemble, generateAccuracyTable, gaugeMiniEnsemble,
+  GAUGE_LIST, ALERT_STATUS, NOW,
+} from './ensembleData'
 
-// ─── Dummy data generators ────────────────────────────────────────────────────
+const HORIZONS = [6, 12, 24, 48]
+const ZOOM_OPTIONS = [12, 24, 48, 96]
 
-const HOURS_48 = Array.from({ length: 49 }, (_, i) => {
-  const h = i % 24
-  const day = i < 24 ? 'Today' : 'Tomorrow'
-  return `${day} ${String(h).padStart(2,'0')}:00`
+const CONFIDENCE_COLOR = { High: '#16a34a', Moderate: '#d97706', Low: '#dc2626' }
+const CONFIDENCE_BG    = { High: '#dcfce7', Moderate: '#fef9c3', Low: '#fee2e2' }
+
+const fmt = (n, d = 2) => (typeof n === 'number' ? n.toFixed(d) : '—')
+const pct  = (n)       => (typeof n === 'number' ? `${Math.round(n * 100)}%` : '—')
+
+function hLabel(h) {
+  if (h === 0) return 'Now'
+  return h < 0 ? `${h}h` : `+${h}h`
+}
+
+const toggleBtn = (active) => ({
+  fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 6, cursor: 'pointer',
+  border: active ? '1px solid #2563eb' : '1px solid #e2e8f0',
+  background: active ? '#2563eb' : '#fff',
+  color: active ? '#fff' : '#64748b',
 })
 
-function makeObserved(base, amp, drift = 0) {
-  return HOURS_48.map((label, i) => ({
-    label,
-    observed: +(base + amp * Math.sin(i * 0.28) + drift * i * 0.012 + (Math.random() - 0.5) * 0.12).toFixed(3),
-  }))
-}
-
-function addForecasts(observed, offsets = { t6: 0.15, t12: 0.28, t24: 0.42, t48: 0.55 }) {
-  return observed.map((d, i) => ({
-    ...d,
-    'T+6h':  i >= 42 ? undefined : +(d.observed + offsets.t6  + (Math.random()-0.5)*0.08).toFixed(3),
-    'T+12h': i >= 36 ? undefined : +(d.observed + offsets.t12 + (Math.random()-0.5)*0.10).toFixed(3),
-    'T+24h': i >= 24 ? undefined : +(d.observed + offsets.t24 + (Math.random()-0.5)*0.14).toFixed(3),
-    'T+48h': i >= 0  ? undefined : +(d.observed + offsets.t48 + (Math.random()-0.5)*0.18).toFixed(3),
-  }))
-}
-
-const GAUGES = [
-  {
-    id: 'G01', name: 'Kalu Ganga – Millakanda', basin: 'Kalu',
-    threshold: { alert: 3.5, minor: 4.0, major: 4.5 },
-    unit: 'm', status: 'MAJOR_FLOOD',
-    data: addForecasts(makeObserved(4.2, 0.65, 0.08), { t6:0.18, t12:0.32, t24:0.50, t48:0.70 }),
-    modelRun: '14:00 LKT · 17 Jun 2026', nse: 0.87, rmse: 0.14,
-  },
-  {
-    id: 'G02', name: 'Kelani River – Hanwella', basin: 'Kelani',
-    threshold: { alert: 3.0, minor: 3.5, major: 3.8 },
-    unit: 'm', status: 'ALERT',
-    data: addForecasts(makeObserved(2.9, 0.45, 0.04), { t6:0.10, t12:0.20, t24:0.32, t48:0.45 }),
-    modelRun: '14:00 LKT · 17 Jun 2026', nse: 0.91, rmse: 0.09,
-  },
-  {
-    id: 'G03', name: 'Mahaweli – Manampitiya', basin: 'Mahaweli',
-    threshold: { alert: 3.2, minor: 3.8, major: 4.2 },
-    unit: 'm', status: 'NORMAL',
-    data: addForecasts(makeObserved(2.1, 0.30, 0.01), { t6:0.05, t12:0.10, t24:0.15, t48:0.20 }),
-    modelRun: '14:00 LKT · 17 Jun 2026', nse: 0.94, rmse: 0.06,
-  },
-  {
-    id: 'G04', name: 'Nilwala – Pitabeddara', basin: 'Nilwala',
-    threshold: { alert: 3.0, minor: 3.5, major: 4.0 },
-    unit: 'm', status: 'MINOR_FLOOD',
-    data: addForecasts(makeObserved(3.5, 0.40, 0.05), { t6:0.12, t12:0.22, t24:0.38, t48:0.52 }),
-    modelRun: '14:00 LKT · 17 Jun 2026', nse: 0.88, rmse: 0.11,
-  },
-  {
-    id: 'G05', name: 'Walawe – Embilipitiya', basin: 'Walawe',
-    threshold: { alert: 3.8, minor: 4.2, major: 4.5 },
-    unit: 'm', status: 'MAJOR_FLOOD',
-    data: addForecasts(makeObserved(4.7, 0.55, 0.10), { t6:0.20, t12:0.38, t24:0.58, t48:0.80 }),
-    modelRun: '14:00 LKT · 17 Jun 2026', nse: 0.85, rmse: 0.17,
-  },
-  {
-    id: 'G06', name: 'Gin Ganga – Baddegama', basin: 'Gin',
-    threshold: { alert: 2.8, minor: 3.2, major: 3.8 },
-    unit: 'm', status: 'NORMAL',
-    data: addForecasts(makeObserved(1.9, 0.25, 0.00), { t6:0.04, t12:0.08, t24:0.12, t48:0.16 }),
-    modelRun: '14:00 LKT · 17 Jun 2026', nse: 0.96, rmse: 0.04,
-  },
-]
-
-// Error timeseries — diff between observed and T+6 forecast
-function buildErrorSeries(data) {
-  return data.slice(0, 42).map(d => ({
-    label: d.label,
-    error: d['T+6h'] != null ? +(d['T+6h'] - d.observed).toFixed(3) : null,
-  })).filter(d => d.error !== null)
-}
-
-// ─── Alert level config ────────────────────────────────────────────────────────
-const ALERT_STATUS = {
-  NORMAL:      { label: 'Normal',      color: '#16a34a', bg: '#dcfce7', dot: '#22c55e' },
-  ALERT:       { label: 'Alert',       color: '#ca8a04', bg: '#fef9c3', dot: '#eab308' },
-  MINOR_FLOOD: { label: 'Minor Flood', color: '#ea580c', bg: '#ffedd5', dot: '#f97316' },
-  MAJOR_FLOOD: { label: 'Major Flood', color: '#dc2626', bg: '#fee2e2', dot: '#ef4444' },
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function Card({ children, style = {} }) {
+// Custom tooltip that surfaces all ensemble fields cleanly
+function EnsembleTooltip({ active, payload, label, thresholds }) {
+  if (!active || !payload?.length) return null
+  const d = payload.reduce((acc, p) => ({ ...acc, [p.dataKey]: p.value }), {})
+  const isHist = label < 0
   return (
-    <div style={{
-      background: '#fff', borderRadius: 10,
-      border: '1px solid #e8edf2',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-      overflow: 'hidden', ...style,
-    }}>{children}</div>
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', fontSize: 11, minWidth: 200, boxShadow: '0 4px 14px rgba(0,0,0,0.1)' }}>
+      <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 6 }}>t = {hLabel(label)}</div>
+      {d.observed != null && <Row label="Observed" value={`${fmt(d.observed)} m`} color="#2563eb" />}
+      {!isHist && d.forecast_p90 != null && (
+        <>
+          <Row label="P90 (worst case)" value={`${fmt(d.forecast_p90)} m`} color="#dc2626" />
+          <Row label="P50 (median)"     value={`${fmt(d.forecast_median)} m`} color="#7c3aed" bold />
+          <Row label="P10 (best case)"  value={`${fmt(d.forecast_p10)} m`} color="#16a34a" />
+          <div style={{ borderTop: '1px solid #f1f5f9', margin: '6px 0' }} />
+          <Row label="Spread (P90-P10)" value={`${fmt(d.ensemble_spread)} m`} color="#64748b" />
+          {thresholds && (
+            <>
+              <Row label="Exc. Minor Flood"  value={pct(d.exceedance_minor)}  color="#ea580c" />
+              <Row label="Exc. Major Flood"  value={pct(d.exceedance_major)}  color="#dc2626" />
+              <Row label="Exc. Critical"     value={pct(d.exceedance_critical)} color="#7f1d1d" />
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+function Row({ label, value, color, bold }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 3 }}>
+      <span style={{ color: '#64748b' }}>{label}</span>
+      <span style={{ fontWeight: bold ? 800 : 600, color: color || '#1e293b' }}>{value}</span>
+    </div>
   )
 }
 
-function CardHeader({ title, sub, children }) {
+// Exceedance probability pill
+function ExcPill({ prob, label }) {
+  const p = Math.round(prob * 100)
+  const color = p >= 70 ? '#dc2626' : p >= 40 ? '#d97706' : '#16a34a'
+  const bg    = p >= 70 ? '#fee2e2' : p >= 40 ? '#fef9c3' : '#dcfce7'
   return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-      padding: '14px 18px 0',
-    }}>
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{title}</div>
-        {sub && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{sub}</div>}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderRadius: 7, background: bg, marginBottom: 4 }}>
+      <div style={{ flex: 1, fontSize: 11.5, fontWeight: 600, color: '#374151' }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color }}>{p}%</div>
+      <div style={{ width: 52, height: 7, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${p}%`, background: color, borderRadius: 4 }} />
+      </div>
+    </div>
+  )
+}
+
+export default function ForecastPage() {
+  const [gaugeId, setGaugeId] = useState('G01')
+  const [zoomHrs, setZoomHrs] = useState(96)
+  const [showSpaghetti, setShowSpaghetti] = useState(false)
+  const [showInnerBand, setShowInnerBand] = useState(true)
+  const [activeHorizon, setActiveHorizon] = useState(24)
+
+  const { points, horizonSummary, peak, memberLines, thresholds, gauge, N_MEMBERS } =
+    useMemo(() => generateEnsemble(gaugeId), [gaugeId])
+
+  const accuracyTable = useMemo(() => generateAccuracyTable(gaugeId), [gaugeId])
+
+  const chartData = useMemo(() => {
+    const half = zoomHrs / 2
+    return points.filter((p) => p.h >= -half && p.h <= half)
+  }, [points, zoomHrs])
+
+  const hz = horizonSummary.find((h) => h.horizon === activeHorizon) || horizonSummary[0]
+  const current = points.find((p) => p.h === 0)
+
+  const peakTime = new Date(NOW.getTime() + peak.h * 3600000)
+    .toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+  return (
+    <div style={{ background: '#f0f4f8', minHeight: '100%', fontFamily: 'inherit' }}>
+
+      {/* ── Filter bar ── */}
+      <div style={{
+        background: '#fff', borderBottom: '1px solid #e2e8f0',
+        padding: '11px 24px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em' }}>Station</span>
+        <select
+          value={gaugeId} onChange={(e) => setGaugeId(e.target.value)}
+          style={{ fontSize: 12, fontWeight: 600, padding: '7px 11px', border: '1px solid #e2e8f0', borderRadius: 7, background: '#fff', cursor: 'pointer' }}
+        >
+          {GAUGE_LIST.map((g) => <option key={g.id} value={g.id}>{g.name} [{g.basin}]</option>)}
+        </select>
+
+        <div style={{ width: 1, height: 26, background: '#e2e8f0' }} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em' }}>Zoom</span>
+        {ZOOM_OPTIONS.map((z) => (
+          <button key={z} onClick={() => setZoomHrs(z)} style={toggleBtn(zoomHrs === z)}>{z}h window</button>
+        ))}
+
+        <div style={{ width: 1, height: 26, background: '#e2e8f0' }} />
+        <button onClick={() => setShowInnerBand((v) => !v)} style={toggleBtn(showInnerBand)}>P25–P75 band</button>
+        <button onClick={() => setShowSpaghetti((v) => !v)} style={toggleBtn(showSpaghetti)}>Spaghetti ({N_MEMBERS} members)</button>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>Model run</span>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: '#1e293b' }}>
+            {NOW.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} LKT
+          </span>
+        </div>
+      </div>
+
+      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* ── Hero: chart + exceedance panel ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 14 }}>
+
+          {/* Main chart */}
+          <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b' }}>{gauge?.name}</div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Ensemble forecast · {N_MEMBERS} members · ±10% rainfall perturbation</div>
+              </div>
+              <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#64748b' }}>
+                <LegendPill color="#93c5fd" alpha label="P10–P90 spread" />
+                <LegendPill color="#6d28d9" dash label="P50 Median" />
+                <LegendPill color="#2563eb" label="Observed" />
+              </div>
+            </div>
+
+            <ResponsiveContainer width="100%" height={360}>
+              <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="h" tickFormatter={hLabel} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} domain={['auto', 'auto']} />
+                <Tooltip content={<EnsembleTooltip thresholds={thresholds} />} />
+
+                {/* Threshold lines */}
+                <ReferenceLine y={thresholds.alert}   stroke="#eab308" strokeDasharray="3 3" label={{ value: 'Alert',    fontSize: 9, fill: '#ca8a04', position: 'insideTopRight' }} />
+                <ReferenceLine y={thresholds.minor}   stroke="#f97316" strokeDasharray="3 3" label={{ value: 'Minor',    fontSize: 9, fill: '#ea580c', position: 'insideTopRight' }} />
+                <ReferenceLine y={thresholds.major}   stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Major',    fontSize: 9, fill: '#dc2626', position: 'insideTopRight' }} />
+                <ReferenceLine y={thresholds.critical} stroke="#991b1b" strokeDasharray="3 3" label={{ value: 'Critical', fontSize: 9, fill: '#7f1d1d', position: 'insideTopRight' }} />
+
+                {/* Now marker */}
+                <ReferenceLine x={0} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: 'Now', fontSize: 9, fill: '#94a3b8', position: 'insideTopLeft' }} />
+
+                {/* Outer P10–P90 shaded band */}
+                <Area
+                  type="monotone"
+                  dataKey="forecast_p90"
+                  stroke="none"
+                  fill="#dbeafe"
+                  fillOpacity={0.55}
+                  legendType="none"
+                  name="P90 (worst case)"
+                  connectNulls
+                />
+                <Area
+                  type="monotone"
+                  dataKey="forecast_p10"
+                  stroke="none"
+                  fill="#f0f4f8"
+                  fillOpacity={1}
+                  legendType="none"
+                  name="P10 fill-back"
+                  connectNulls
+                />
+
+                {/* Inner P25–P75 band */}
+                {showInnerBand && (
+                  <>
+                    <Area type="monotone" dataKey="forecast_p75" stroke="none" fill="#bfdbfe" fillOpacity={0.7} legendType="none" name="P75" connectNulls />
+                    <Area type="monotone" dataKey="forecast_p25" stroke="none" fill="#f0f4f8" fillOpacity={1} legendType="none" name="P25 fill-back" connectNulls />
+                  </>
+                )}
+
+                {/* Spaghetti member lines (optional) */}
+                {showSpaghetti && memberLines.map((ml, i) => (
+                  <Line
+                    key={`m${i}`}
+                    data={ml.map((p) => ({ h: p.h, [`m${i}`]: p.level }))}
+                    type="monotone"
+                    dataKey={`m${i}`}
+                    stroke="#93c5fd"
+                    strokeWidth={0.7}
+                    dot={false}
+                    legendType="none"
+                    connectNulls
+                    opacity={0.5}
+                  />
+                ))}
+
+                {/* P90 boundary line */}
+                <Line type="monotone" dataKey="forecast_p90" stroke="#ef4444" strokeWidth={1.2} strokeDasharray="3 3" dot={false} name="P90 (worst case)" connectNulls />
+                {/* P10 boundary line */}
+                <Line type="monotone" dataKey="forecast_p10" stroke="#16a34a" strokeWidth={1.2} strokeDasharray="3 3" dot={false} name="P10 (best case)" connectNulls />
+                {/* Median — bold */}
+                <Line type="monotone" dataKey="forecast_median" stroke="#7c3aed" strokeWidth={2.5} strokeDasharray="5 3" dot={false} name="P50 Median" connectNulls />
+                {/* Observed — solid */}
+                <Line type="monotone" dataKey="observed" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Observed" connectNulls />
+
+                {/* Peak dot on P90 */}
+                <ReferenceDot
+                  x={peak.h} y={peak.forecast_p90} r={5}
+                  fill="#dc2626" stroke="#fff" strokeWidth={2}
+                  label={{ value: `P90 peak ${fmt(peak.forecast_p90)}m`, fontSize: 9.5, fill: '#dc2626', position: 'top' }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+
+            <div style={{ display: 'flex', gap: 20, marginTop: 6, fontSize: 11.5, color: '#64748b', flexWrap: 'wrap' }}>
+              <span>P90 peak: <strong style={{ color: '#dc2626' }}>{fmt(peak.forecast_p90)} m</strong> at {peakTime}</span>
+              <span>P50 peak: <strong style={{ color: '#7c3aed' }}>{fmt(peak.forecast_median)} m</strong></span>
+              <span>P10 peak: <strong style={{ color: '#16a34a' }}>{fmt(peak.forecast_p10)} m</strong></span>
+            </div>
+          </div>
+
+          {/* Exceedance probability panel */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            {/* Current reading */}
+            <Panel title="Current Reading">
+              <div style={{ fontSize: 30, fontWeight: 900, color: '#dc2626', textAlign: 'center', padding: '4px 0 2px' }}>
+                {fmt(current?.observed)} m
+              </div>
+              <div style={{ textAlign: 'center', fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>
+                {NOW.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} LKT
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 5, background: '#fee2e2', color: '#dc2626' }}>
+                  {gauge?.trend} Rising
+                </span>
+              </div>
+            </Panel>
+
+            {/* Horizon selector + exceedance */}
+            <Panel
+              title="Exceedance Probability"
+              action={
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {HORIZONS.map((h) => (
+                    <button key={h} onClick={() => setActiveHorizon(h)} style={{ ...toggleBtn(activeHorizon === h), padding: '3px 8px', fontSize: 10 }}>
+                      +{h}h
+                    </button>
+                  ))}
+                </div>
+              }
+            >
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                Probability ensemble exceeds threshold within <strong>+{activeHorizon}h</strong>:
+              </div>
+              {hz && (
+                <>
+                  <ExcPill prob={hz.exceedance_alert}    label="Alert level" />
+                  <ExcPill prob={hz.exceedance_minor}    label="Minor Flood" />
+                  <ExcPill prob={hz.exceedance_major}    label="Major Flood" />
+                  <ExcPill prob={hz.exceedance_critical} label="Critical" />
+                  <div style={{ marginTop: 8, padding: '7px 10px', borderRadius: 7, background: CONFIDENCE_BG[hz.confidence], fontSize: 11.5 }}>
+                    <span style={{ color: '#64748b' }}>Ensemble confidence: </span>
+                    <strong style={{ color: CONFIDENCE_COLOR[hz.confidence] }}>{hz.confidence}</strong>
+                    <span style={{ color: '#94a3b8' }}> (spread {fmt(hz.spread)} m)</span>
+                  </div>
+                </>
+              )}
+            </Panel>
+
+            {/* Defensible alert callout */}
+            {hz && hz.exceedance_major >= 0.5 && (
+              <div style={{
+                background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 10,
+                padding: '12px 14px', fontSize: 11.5,
+              }}>
+                <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>⚠ Alert Basis</div>
+                <div style={{ color: '#7f1d1d', lineHeight: 1.6 }}>
+                  Level currently <strong>{fmt(current?.observed)} m</strong> · <strong>{pct(hz.exceedance_major)}</strong> of {N_MEMBERS} ensemble members exceed <strong>Major Flood ({fmt(thresholds.major)} m)</strong> within +{activeHorizon}h — recommend issuing warning.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Horizon summary cards ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          {horizonSummary.map((hz) => (
+            <div
+              key={hz.horizon}
+              onClick={() => setActiveHorizon(hz.horizon)}
+              style={{
+                background: '#fff', borderRadius: 10, border: activeHorizon === hz.horizon ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                padding: '13px 14px', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>T +{hz.horizon}h</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 5, background: CONFIDENCE_BG[hz.confidence], color: CONFIDENCE_COLOR[hz.confidence] }}>
+                  {hz.confidence}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justify: 'space-between', gap: 4, marginBottom: 8 }}>
+                <LevelPill label="P10" value={hz.p10} color="#16a34a" />
+                <LevelPill label="P50" value={hz.p50} color="#7c3aed" bold />
+                <LevelPill label="P90" value={hz.p90} color="#dc2626" />
+              </div>
+              {/* Spread bar */}
+              <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 3 }}>Spread: {fmt(hz.spread)} m</div>
+              <SpreadBar p10={hz.p10} p90={hz.p90} current={current?.observed} thresholds={thresholds} />
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 10, color: '#64748b' }}>Major flood exceedance</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: hz.exceedance_major >= 0.5 ? '#dc2626' : '#16a34a' }}>
+                  {pct(hz.exceedance_major)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Spread chart + Accuracy table ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+
+          {/* Ensemble spread over time */}
+          <Panel title="Ensemble Spread Width Over Forecast Horizon">
+            <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>
+              Narrow = high confidence · Wide = high uncertainty. Watch it widen as the model looks further ahead.
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={points.filter((p) => p.h > 0 && p.h <= 48)} margin={{ left: -10, right: 8, top: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="h" tickFormatter={(h) => `+${h}h`} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                <Tooltip
+                  formatter={(v) => [`${fmt(v)} m`, 'Spread (P90-P10)']}
+                  labelFormatter={(h) => `T +${h}h`}
+                  contentStyle={{ fontSize: 11, borderRadius: 7 }}
+                />
+                <Bar dataKey="ensemble_spread" radius={[3, 3, 0, 0]} name="Spread">
+                  {points.filter((p) => p.h > 0 && p.h <= 48).map((p, i) => (
+                    <Cell
+                      key={i}
+                      fill={p.ensemble_spread < 0.3 ? '#16a34a' : p.ensemble_spread < 0.7 ? '#f59e0b' : '#ef4444'}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          {/* Accuracy table */}
+          <Panel title="Forecast Accuracy — Last 7 Runs">
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    {['Date', 'MAE (m)', 'RMSE (m)', 'Bias (m)', 'Spread (m)', 'Confidence', 'Obs. within P90'].map((h) => (
+                      <th key={h} style={{ padding: '7px 8px', textAlign: 'left', color: '#94a3b8', fontWeight: 600, borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {accuracyTable.map((row) => (
+                    <tr key={row.date} style={{ borderBottom: '1px solid #f8fafc' }}>
+                      <td style={{ padding: '7px 8px', fontFamily: 'monospace' }}>{row.date}</td>
+                      <td style={{ padding: '7px 8px', fontFamily: 'monospace', fontWeight: 700, color: row.mae > 0.15 ? '#dc2626' : '#16a34a' }}>{fmt(row.mae)}</td>
+                      <td style={{ padding: '7px 8px', fontFamily: 'monospace' }}>{fmt(row.rmse)}</td>
+                      <td style={{ padding: '7px 8px', fontFamily: 'monospace', color: row.bias > 0 ? '#ea580c' : '#0891b2' }}>{row.bias > 0 ? '+' : ''}{fmt(row.bias)}</td>
+                      <td style={{ padding: '7px 8px' }}>
+                        <SpreadCell spread={row.spread} />
+                      </td>
+                      <td style={{ padding: '7px 8px' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: CONFIDENCE_BG[row.confidence], color: CONFIDENCE_COLOR[row.confidence] }}>
+                          {row.confidence}
+                        </span>
+                      </td>
+                      <td style={{ padding: '7px 8px', fontWeight: 700, color: row.withinP90 >= 90 ? '#16a34a' : '#d97706' }}>{row.withinP90}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Small presentational helpers ──────────────────────────────────
+
+function Panel({ title, action, children }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: '13px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b' }}>{title}</div>
+        {action}
       </div>
       {children}
     </div>
   )
 }
 
-function StatusBadge({ status }) {
-  const d = ALERT_STATUS[status] || ALERT_STATUS.NORMAL
+function LegendPill({ color, label, dash, alpha }) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '3px 9px', borderRadius: 5,
-      fontSize: 11, fontWeight: 700,
-      background: d.bg, color: d.color,
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: d.dot }} />
-      {d.label}
-    </span>
-  )
-}
-
-function MetricPill({ label, value, good }) {
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      padding: '8px 16px',
-      background: good ? '#f0fdf4' : '#fef2f2',
-      border: `1px solid ${good ? '#bbf7d0' : '#fecaca'}`,
-      borderRadius: 8,
-    }}>
-      <span style={{ fontSize: 18, fontWeight: 800, color: good ? '#16a34a' : '#dc2626', fontFamily: 'monospace' }}>
-        {value}
-      </span>
-      <span style={{ fontSize: 10, color: '#64748b', marginTop: 2, fontWeight: 600 }}>{label}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <div style={{
+        width: 22, height: 3, background: alpha ? `${color}66` : color, borderRadius: 2,
+        borderTop: dash ? `2px dashed ${color}` : undefined,
+        background: alpha ? `${color}55` : (dash ? 'none' : color),
+      }} />
+      <span style={{ fontSize: 10.5, color: '#64748b' }}>{label}</span>
     </div>
   )
 }
 
-// Custom tooltip for main chart
-function ChartTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null
+function LevelPill({ label, value, color, bold }) {
   return (
-    <div style={{
-      background: '#fff', border: '1px solid #e2e8f0', borderRadius: 9,
-      padding: '10px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-      fontSize: 12, minWidth: 180,
-    }}>
-      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8, fontWeight: 600 }}>{label}</div>
-      {payload.map((p, i) => (
-        p.value != null && (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 4 }}>
-            <span style={{ color: p.color, fontWeight: 600 }}>{p.name}</span>
-            <span style={{ fontWeight: 800, fontFamily: 'monospace', color: '#0f172a' }}>{p.value.toFixed(3)} m</span>
-          </div>
-        )
-      ))}
+    <div style={{ flex: 1, textAlign: 'center', background: '#f8fafc', borderRadius: 6, padding: '4px 2px' }}>
+      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>{label}</div>
+      <div style={{ fontSize: 11.5, fontWeight: bold ? 800 : 600, color }}>{fmt(value)}m</div>
     </div>
   )
 }
 
-// ─── Horizon toggle ───────────────────────────────────────────────────────────
-const HORIZONS = [
-  { key: 'T+6h',  color: '#f59e0b', dash: '8 3',  label: 'T+6h' },
-  { key: 'T+12h', color: '#8b5cf6', dash: '6 3',  label: 'T+12h' },
-  { key: 'T+24h', color: '#06b6d4', dash: '4 3',  label: 'T+24h' },
-  { key: 'T+48h', color: '#ec4899', dash: '2 3',  label: 'T+48h' },
-]
-
-// ─── Main page ─────────────────────────────────────────────────────────────────
-export default function M4ForecastChartPage() {
-  const [selId, setSelId]           = useState('G01')
-  const [activeHorizons, setHorizons] = useState(['T+6h', 'T+12h', 'T+24h'])
-  const [showError, setShowError]   = useState(false)
-  const [brushRange, setBrushRange] = useState(null)
-
-  const gauge    = GAUGES.find(g => g.id === selId)
-  const errData  = useMemo(() => buildErrorSeries(gauge.data), [gauge])
-  const maxError = Math.max(...errData.map(d => Math.abs(d.error)))
-
-  const toggleHorizon = (key) =>
-    setHorizons(prev =>
-      prev.includes(key) ? prev.filter(h => h !== key) : [...prev, key]
-    )
-
-  // Deviation at current time (last observed point)
-  const lastObs = gauge.data[gauge.data.length - 1]
-  const lastT6  = gauge.data.find(d => d['T+6h'] != null && gauge.data.indexOf(d) >= 40)
-  const deviation = lastT6 ? +(lastT6['T+6h'] - lastObs.observed).toFixed(3) : null
-
-  // Tick X axis labels — show every 6th
-  const xTick = (val) => {
-    const parts = val.split(' ')
-    if (!parts[1]) return ''
-    const [h] = parts[1].split(':')
-    return parseInt(h) % 6 === 0 ? parts[1] : ''
-  }
-
+// Visual bar showing where current level sits within P10-P90 range
+function SpreadBar({ p10, p90, current, thresholds }) {
+  const total = Math.max(p90 - p10, 0.01)
+  const curPos = Math.max(0, Math.min(1, (current - p10) / total))
+  const minorPos = Math.max(0, Math.min(1, (thresholds.minor - p10) / total))
+  const majorPos = Math.max(0, Math.min(1, (thresholds.major - p10) / total))
   return (
-    <div style={{ fontFamily: 'inherit' }}>
-
-      {/* ── Page header ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', margin: 0 }}>
-            Forecast vs Observed
-          </h1>
-          <p style={{ fontSize: 13, color: '#64748b', marginTop: 3 }}>
-            HEC-RAS model output overlaid on live gauge readings · 48-hour horizon
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>Model run:</span>
-          <span style={{
-            fontSize: 11, fontWeight: 700, color: '#2563eb',
-            background: '#eff6ff', border: '1px solid #bfdbfe',
-            borderRadius: 6, padding: '4px 10px',
-          }}>
-            📊 {gauge.modelRun}
-          </span>
-        </div>
-      </div>
-
-      {/* ── Gauge selector cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 18 }}>
-        {GAUGES.map((g) => {
-          const d = ALERT_STATUS[g.status] || ALERT_STATUS.NORMAL
-          const isActive = g.id === selId
-          return (
-            <div
-              key={g.id}
-              onClick={() => setSelId(g.id)}
-              style={{
-                background: isActive ? '#fff' : '#f8fafc',
-                border: isActive ? `2px solid #2563eb` : '1px solid #e2e8f0',
-                borderRadius: 10, padding: '12px 14px', cursor: 'pointer',
-                boxShadow: isActive ? '0 2px 12px rgba(37,99,235,0.15)' : 'none',
-                transition: 'all 0.15s',
-              }}
-            >
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, marginBottom: 4,
-                textTransform: 'uppercase', letterSpacing: '0.05em' }}>{g.basin} · {g.id}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 6,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {g.name.split(' – ')[0]}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 16, fontWeight: 900, color: d.color, fontFamily: 'monospace' }}>
-                  {g.data[g.data.length - 1]?.observed.toFixed(2)}m
-                </span>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: d.dot, display: 'inline-block' }} />
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* ── Main chart card ── */}
-      <Card style={{ marginBottom: 16 }}>
-        <CardHeader
-          title={`${gauge.name} — River Level · Forecast vs Observed`}
-          sub={`Basin: ${gauge.basin} · Flood thresholds: Alert ${gauge.threshold.alert}m · Minor ${gauge.threshold.minor}m · Major ${gauge.threshold.major}m`}
-        >
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Horizon toggles */}
-            {HORIZONS.map(h => (
-              <button
-                key={h.key}
-                onClick={() => toggleHorizon(h.key)}
-                style={{
-                  padding: '4px 10px', fontSize: 11, fontWeight: 700,
-                  borderRadius: 6, cursor: 'pointer', border: 'none',
-                  background: activeHorizons.includes(h.key) ? h.color + '18' : '#f1f5f9',
-                  color: activeHorizons.includes(h.key) ? h.color : '#94a3b8',
-                  outline: activeHorizons.includes(h.key) ? `2px solid ${h.color}40` : 'none',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {h.label}
-              </button>
-            ))}
-            <div style={{ width: 1, height: 20, background: '#e2e8f0' }} />
-            <button
-              onClick={() => setShowError(v => !v)}
-              style={{
-                padding: '4px 10px', fontSize: 11, fontWeight: 700,
-                borderRadius: 6, cursor: 'pointer', border: 'none',
-                background: showError ? '#fef3c7' : '#f1f5f9',
-                color: showError ? '#d97706' : '#94a3b8',
-              }}
-            >
-              Error Band
-            </button>
-          </div>
-        </CardHeader>
-
-        <div style={{ padding: '16px 18px 8px' }}>
-          {/* Performance metrics */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-            <MetricPill label="NSE Score"      value={gauge.nse} good={gauge.nse > 0.75} />
-            <MetricPill label="RMSE (m)"       value={gauge.rmse} good={gauge.rmse < 0.15} />
-            <MetricPill label="T+6h Deviation" value={deviation != null ? `${deviation > 0 ? '+' : ''}${deviation}m` : '—'} good={deviation != null && Math.abs(deviation) < 0.2} />
-            <div style={{ flex: 1 }} />
-            <StatusBadge status={gauge.status} />
-          </div>
-
-          {/* Main chart */}
-          <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={gauge.data} margin={{ top: 8, right: 20, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis
-                dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }}
-                tickFormatter={xTick} interval={0}
-              />
-              <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} unit="m" domain={['auto', 'auto']} />
-              <Tooltip content={<ChartTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} />
-
-              {/* Threshold reference lines */}
-              <ReferenceLine y={gauge.threshold.major} stroke="#ef4444" strokeDasharray="4 3" strokeWidth={1.5}
-                label={{ value: 'Major', position: 'right', fontSize: 9, fill: '#ef4444' }} />
-              <ReferenceLine y={gauge.threshold.minor} stroke="#f97316" strokeDasharray="4 3" strokeWidth={1}
-                label={{ value: 'Minor', position: 'right', fontSize: 9, fill: '#f97316' }} />
-              <ReferenceLine y={gauge.threshold.alert} stroke="#eab308" strokeDasharray="4 3" strokeWidth={1}
-                label={{ value: 'Alert', position: 'right', fontSize: 9, fill: '#eab308' }} />
-
-              {/* Error shading */}
-              {showError && HORIZONS.slice(0,1).map(h => (
-                activeHorizons.includes(h.key) && (
-                  <Area
-                    key={`err-${h.key}`}
-                    type="monotone"
-                    dataKey={h.key}
-                    stroke="none"
-                    fill={h.color}
-                    fillOpacity={0.07}
-                    legendType="none"
-                    connectNulls={false}
-                    isAnimationActive={false}
-                  />
-                )
-              ))}
-
-              {/* Observed — solid blue area */}
-              <Area
-                type="monotone"
-                dataKey="observed"
-                stroke="#2563eb"
-                strokeWidth={2.5}
-                fill="#2563eb"
-                fillOpacity={0.06}
-                dot={false}
-                name="Observed"
-                activeDot={{ r: 4, fill: '#2563eb' }}
-              />
-
-              {/* Forecast horizons — dashed lines */}
-              {HORIZONS.map(h =>
-                activeHorizons.includes(h.key) && (
-                  <Line
-                    key={h.key}
-                    type="monotone"
-                    dataKey={h.key}
-                    stroke={h.color}
-                    strokeWidth={1.8}
-                    strokeDasharray={h.dash}
-                    dot={false}
-                    name={h.key}
-                    connectNulls={false}
-                    isAnimationActive={false}
-                  />
-                )
-              )}
-
-              <Brush dataKey="label" height={24} stroke="#e2e8f0" fill="#f8fafc"
-                tickFormatter={xTick}
-                travellerWidth={6}
-                style={{ fontSize: 9 }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-
-      {/* ── Bottom row: Error chart + Model accuracy table + Horizon summary ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.9fr', gap: 16 }}>
-
-        {/* Forecast error over time */}
-        <Card>
-          <CardHeader
-            title="T+6h Forecast Error"
-            sub="Forecast − Observed (m) · positive = model over-predicts"
-          />
-          <div style={{ padding: '12px 18px 16px' }}>
-            <ResponsiveContainer width="100%" height={180}>
-              <ComposedChart data={errData} margin={{ top: 4, right: 8, left: -15, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={xTick} interval={0} />
-                <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} unit="m" />
-                <Tooltip
-                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
-                  formatter={(v) => [`${v > 0 ? '+' : ''}${v.toFixed(3)} m`, 'Error']}
-                />
-                <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1} />
-                <ReferenceLine y={0.2}  stroke="#ef4444" strokeDasharray="3 2" strokeWidth={1} />
-                <ReferenceLine y={-0.2} stroke="#ef4444" strokeDasharray="3 2" strokeWidth={1} />
-                <Bar dataKey="error" radius={[3,3,0,0]}
-                  fill="#94a3b8"
-                  label={false}
-                  isAnimationActive={true}
-                  // colour each bar by sign
-                  style={{ fill: 'transparent' }}
-                >
-                  {errData.map((d, i) => (
-                    <rect key={i}
-                      fill={d.error > 0.2 ? '#ef4444' : d.error < -0.2 ? '#3b82f6' : d.error > 0 ? '#f97316aa' : '#3b82f6aa'}
-                    />
-                  ))}
-                </Bar>
-                <Line type="monotone" dataKey="error"
-                  stroke={errData.some(d => Math.abs(d.error) > 0.2) ? '#ef4444' : '#94a3b8'}
-                  strokeWidth={1.5} dot={false} name="Error"
-                  isAnimationActive={false}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-              {[
-                { label: 'Mean Error', val: (errData.reduce((s,d)=>s+d.error,0)/errData.length).toFixed(3)+'m' },
-                { label: 'Max |Error|', val: maxError.toFixed(3)+'m' },
-                { label: 'Within ±0.2m', val: Math.round(errData.filter(d=>Math.abs(d.error)<0.2).length/errData.length*100)+'%' },
-              ].map(m => (
-                <div key={m.label} style={{ flex: 1, textAlign: 'center', background: '#f8fafc', borderRadius: 7, padding: '7px 4px' }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#1e293b', fontFamily: 'monospace' }}>{m.val}</div>
-                  <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{m.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        {/* Model accuracy table — all gauges */}
-        <Card>
-          <CardHeader title="Model Accuracy — All Gauges" sub="Current model run · HEC-RAS v6.3" />
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: '#f8fafc' }}>
-                  {['Station', 'NSE', 'RMSE', 'T+6h Err', 'Status'].map(h => (
-                    <th key={h} style={{ padding: '9px 12px', textAlign: 'left',
-                      fontSize: 11, color: '#94a3b8', fontWeight: 600,
-                      borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {GAUGES.map((g) => {
-                  const err = buildErrorSeries(g.data)
-                  const meanErr = (err.reduce((s,d)=>s+d.error,0)/err.length).toFixed(3)
-                  const nseGood = g.nse > 0.75
-                  return (
-                    <tr key={g.id}
-                      onClick={() => setSelId(g.id)}
-                      style={{
-                        borderBottom: '1px solid #f8fafc', cursor: 'pointer',
-                        background: selId === g.id ? '#eff6ff' : 'transparent',
-                      }}
-                    >
-                      <td style={{ padding: '9px 12px', fontWeight: 600, color: '#1e293b',
-                        maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {g.name.split(' – ')[0]}
-                      </td>
-                      <td style={{ padding: '9px 12px', fontWeight: 700, fontFamily: 'monospace',
-                        color: nseGood ? '#16a34a' : '#dc2626' }}>{g.nse}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace',
-                        color: g.rmse < 0.15 ? '#16a34a' : '#dc2626' }}>{g.rmse}m</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace',
-                        color: Math.abs(meanErr) > 0.2 ? '#dc2626' : '#64748b' }}>
-                        {meanErr > 0 ? '+' : ''}{meanErr}m
-                      </td>
-                      <td style={{ padding: '9px 12px' }}>
-                        <StatusBadge status={g.status} />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        {/* Forecast horizon summary */}
-        <Card>
-          <CardHeader title="Forecast Summary" sub={`${gauge.name.split(' – ')[0]} · peak projections`} />
-          <div style={{ padding: '12px 16px 16px' }}>
-
-            {/* Peak level per horizon */}
-            {HORIZONS.map(h => {
-              const vals = gauge.data.map(d => d[h.key]).filter(v => v != null)
-              if (!vals.length) return null
-              const peak = Math.max(...vals)
-              const peakIdx = gauge.data.findIndex(d => d[h.key] === peak)
-              const atLabel = gauge.data[peakIdx]?.label || '—'
-              const aboveMajor = peak >= gauge.threshold.major
-              const aboveMinor = peak >= gauge.threshold.minor
-              return (
-                <div key={h.key} style={{
-                  marginBottom: 12, padding: '10px 12px',
-                  background: aboveMajor ? '#fef2f2' : aboveMinor ? '#fff7ed' : '#f8fafc',
-                  border: `1px solid ${aboveMajor ? '#fecaca' : aboveMinor ? '#fed7aa' : '#f1f5f9'}`,
-                  borderRadius: 8, borderLeft: `4px solid ${h.color}`,
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: h.color }}>{h.label}</span>
-                    <span style={{ fontSize: 14, fontWeight: 900, color: aboveMajor ? '#dc2626' : '#0f172a',
-                      fontFamily: 'monospace' }}>{peak.toFixed(2)}m</span>
-                  </div>
-                  <div style={{ fontSize: 10, color: '#64748b' }}>
-                    Peak at {atLabel.replace('Today ','').replace('Tomorrow ','')}
-                    {aboveMajor && <span style={{ color: '#dc2626', fontWeight: 700 }}> · MAJOR FLOOD</span>}
-                    {!aboveMajor && aboveMinor && <span style={{ color: '#ea580c', fontWeight: 700 }}> · MINOR FLOOD</span>}
-                  </div>
-                </div>
-              )
-            })}
-
-            {/* Advisory */}
-            <div style={{
-              marginTop: 4, padding: '10px 12px',
-              background: '#eff6ff', borderRadius: 8,
-              border: '1px solid #bfdbfe', fontSize: 11, color: '#1d4ed8',
-            }}>
-              <div style={{ fontWeight: 700, marginBottom: 4 }}>📋 Model Advisory</div>
-              {gauge.nse > 0.85
-                ? 'High model confidence. T+6h and T+12h forecasts reliable for alert decisions.'
-                : 'Moderate model confidence. Verify with upstream rainfall before issuing alerts.'}
-            </div>
-          </div>
-        </Card>
-
-      </div>
+    <div style={{ position: 'relative', height: 10, background: '#dbeafe', borderRadius: 5, overflow: 'visible', marginTop: 2 }}>
+      {/* Minor threshold tick */}
+      {minorPos > 0 && minorPos < 1 && (
+        <div style={{ position: 'absolute', left: `${minorPos * 100}%`, top: -2, width: 1.5, height: 14, background: '#f97316' }} />
+      )}
+      {/* Major threshold tick */}
+      {majorPos > 0 && majorPos < 1 && (
+        <div style={{ position: 'absolute', left: `${majorPos * 100}%`, top: -2, width: 1.5, height: 14, background: '#dc2626' }} />
+      )}
+      {/* Current level diamond */}
+      <div style={{
+        position: 'absolute', left: `${curPos * 100}%`, top: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 8, height: 8, background: '#2563eb',
+        borderRadius: 2, rotate: '45deg', border: '1.5px solid #fff',
+      }} />
     </div>
   )
 }
+
+function SpreadCell({ spread }) {
+  const color = spread < 0.3 ? '#16a34a' : spread < 0.65 ? '#d97706' : '#dc2626'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <div style={{ width: Math.min(48, spread * 48), height: 6, background: color, borderRadius: 3 }} />
+      <span style={{ fontSize: 10.5, fontFamily: 'monospace', color }}>{fmt(spread)}</span>
+    </div>
+  )
+}
+
+/*
+ * API wiring notes:
+ *  - POST /ml/ensemble-summary { gaugeId, horizonHours }
+ *      → horizonSummary (percentiles, exceedance probs, confidence)
+ *  - GET /api/v1/gauges/:id/timeseries
+ *      → points[].observed (historical observed)
+ *  - GET /api/v1/gauges/:id/forecast
+ *      → points[].forecast_median/p10/p90/ensemble_spread/exceedance_* (20-member ensemble)
+ *
+ *  The Python service generates the ensemble by running Muskingum routing
+ *  20× with ±10% rainfall perturbation in parallel on 16 cores.
+ *  gaugeMiniEnsemble(id) is the function to call for M5 gauge cards —
+ *  replace with a real /ml/ensemble-summary?horizon=24 fetch.
+ */

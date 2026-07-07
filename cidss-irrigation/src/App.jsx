@@ -12,10 +12,14 @@ import NotFoundPage from '@/pages/NotFoundPage'
 // const ReservoirAnomalyPage  = lazy(() => import('@/modules/m1-reservoir'))
 // const PublicApiPage         = lazy(() => import('@/modules/m2-public-api'))
 // const CommunityPage         = lazy(() => import('@/modules/m3-community'))
-const ForecastChartPage     = lazy(() => import('@/modules/forecast-chart'))
-const BasinDashboardPage    = lazy(() => import('@/modules/basin-dashboard'))
-const StateBasinMap         = lazy(() => import('@/modules/basin-dashboard/StateBasinMap/StateBasinMap')) 
+const ForecastChartPage     = lazy(() => import('./modules/forecast-chart'))
+const BasinDashboardPage    = lazy(() => import('./modules/basin-dashboard'))
+const StateBasinMap         = lazy(() => import('./modules/basin-dashboard/StateBasinMap/StateBasinMap')) 
 const RiverGaugePage         = lazy(() => import('./modules/basin-dashboard/riverGauge/RiverGaugePage')) 
+const FleetOperation         = lazy(() => import('./modules/GaugeManagement/FleetOperations/GaugeManagementPage')) 
+const ReservoirMgmt         = lazy(() => import('./modules/reservoir/reservoirMgmt')) 
+const HistoricalData         = lazy(() => import('./modules/HistoricalData/index')) 
+const ImpactForecast         = lazy(() => import('./modules/ImpactForecast/index')) 
 // const AlertEnginePage       = lazy(() => import('@/modules/m6-alert-engine'))
 // const ForecastMapPage       = lazy(() => import('@/modules/m7-forecast-map'))
 // const HydroMetPage          = lazy(() => import('@/modules/m8-hydromet'))
@@ -39,6 +43,10 @@ export default function App() {
             <Route path="basin-dashboard/overview"   element={<BasinDashboardPage />} />
             <Route path="basin-dashboard/map"   element={<StateBasinMap />} />
             <Route path="basin-dashboard/river-gauges"   element={<RiverGaugePage />} />
+            <Route path="gauge-management/fleet-operation"   element={<FleetOperation />} />
+            <Route path="historical-data/history"   element={<HistoricalData />} />
+            <Route path="impact-forecast/impact"   element={<ImpactForecast />} />
+            <Route path="reservoir-anomaly-map/mgmt"   element={<ReservoirMgmt />} />
             {/* <Route path="alert-engine"      element={<AlertEnginePage />} />
             <Route path="forecast-map"      element={<ForecastMapPage />} />
             <Route path="hydromet"          element={<HydroMetPage />} />
