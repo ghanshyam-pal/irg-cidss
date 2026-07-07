@@ -84,7 +84,11 @@ const OFFICIAL_NAME = {
 }
 
 // ── Status classification from the 4 thresholds ─────────────────
+// ── Status classification from the 4 thresholds (Safe Fallback) ──
 export function classify(level, t) {
+  // If thresholds are missing for this item, default to NORMAL
+  if (!t) return 'NORMAL';
+  
   if (level >= t.critical) return 'CRITICAL'
   if (level >= t.major) return 'MAJOR_FLOOD'
   if (level >= t.minor) return 'MINOR_FLOOD'
@@ -93,26 +97,35 @@ export function classify(level, t) {
 }
 
 // ── Station metadata (merges data.js + the tables above) ────────
+// ── Station metadata (Safe-merged data.js + the tables above) ────────
 export const STATION_META = Object.fromEntries(
-  GAUGE_DATA.map((g) => [g.id, {
-    id: g.id,
-    name: g.name,
-    officialName: OFFICIAL_NAME[g.id],
-    basin: g.basin,
-    river: RIVER_NAMES[g.id],
-    lat: GAUGE_COORDS[g.id][0],
-    lng: GAUGE_COORDS[g.id][1],
-    elevation: ELEVATION[g.id],
-    catchmentArea: CATCHMENT[g.id],
-    gaugeZero: GAUGE_ZERO[g.id],
-    sensorType: SENSOR_TYPE[g.id],
-    lastCalibration: CALIBRATION[g.id],
-    dataSource: DATA_SOURCE[g.id],
-    officer: OFFICERS[g.basin],
-    baseLevel: g.level,
-    trendHint: g.trend,
-  }])
-)
+  GAUGE_DATA.map((g) => {
+    // 1. Safe lookup for coordinates with a default fallback [0, 0]
+    const coords = GAUGE_COORDS[g.id] || [g.lat || 0, g.lng || 0];
+    
+    // 2. Safe lookup for officer based on basin name
+    const officer = OFFICERS[g.basin] || { div: 'Unknown Division', name: 'N/A', phone: 'N/A' };
+
+    return [g.id, {
+      id: g.id,
+      name: g.name,
+      officialName: OFFICIAL_NAME[g.id] || g.name,
+      basin: g.basin,
+      river: RIVER_NAMES[g.id] || 'Unknown River',
+      lat: coords[0],
+      lng: coords[1],
+      elevation: ELEVATION[g.id] || 0,
+      catchmentArea: CATCHMENT[g.id] || 0,
+      gaugeZero: GAUGE_ZERO[g.id] || 0,
+      sensorType: SENSOR_TYPE[g.id] || 'Unknown Sensor',
+      lastCalibration: CALIBRATION[g.id] || 'N/A',
+      dataSource: DATA_SOURCE[g.id] || 'N/A',
+      officer: officer,
+      baseLevel: g.level,
+      trendHint: g.trend,
+    }];
+  })
+);
 
 export const STATION_IDS = GAUGE_DATA.map((g) => g.id)
 

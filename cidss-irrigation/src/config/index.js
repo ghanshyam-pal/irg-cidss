@@ -114,22 +114,13 @@ export const MODULES = [
     phase: 1,
     children: [
       { id: 'm5-overview', label: 'Overview',           path: '/basin-dashboard/overview' },
-      { id: 'm5-map',      label: 'State & Basin Map',  path: '/basin-dashboard/map' },
+      // { id: 'm5-map',      label: 'State & Basin Map',  path: '/basin-dashboard/map' },
       { id: 'm5-river',    label: 'River Gauges',       path: '/basin-dashboard/river-gauges' },
       { id: 'm5-rain',     label: 'Rain Gauges',        path: '/basin-dashboard/rain-gauges' },
     ],
   },
 
-  // ── Parent: Forecast & Discharge ────────────────────────────
-  {
-    id: 'm4',
-    label: 'Forecast & Discharge',
-    phase: 1,
-    children: [
-      { id: 'm4-forecast', label: 'Forecast vs Observed', path: '/forecast-discharge/forecast-vs-observed' },
-      { id: 'm4-discharge', label: 'Discharge',            path: '/forecast-discharge/discharge' },
-    ],
-  },
+
 
 
   {
@@ -161,6 +152,17 @@ export const MODULES = [
     children: [
       { id: 'm13-fleet', label: 'Impact Forecast', path: '/impact-forecast/impact' },
       // { id: 'm4-discharge', label: 'Discharge',            path: '/forecast-discharge/discharge' },
+    ],
+  },
+
+    // ── Parent: Forecast & Discharge ────────────────────────────
+  {
+    id: 'm4',
+    label: 'Forecast & Discharge',
+    phase: 1,
+    children: [
+      { id: 'm4-forecast', label: 'Forecast vs Observed', path: '/forecast-discharge/forecast-vs-observed' },
+      { id: 'm4-discharge', label: 'Discharge',            path: '/forecast-discharge/discharge' },
     ],
   },
 

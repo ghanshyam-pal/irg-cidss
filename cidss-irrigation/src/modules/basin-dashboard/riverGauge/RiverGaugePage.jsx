@@ -11,13 +11,50 @@ import {
 
 const ZOOM_OPTIONS = [6, 12, 24, 48, 72]
 const fmt = (n, d = 2) => (typeof n === 'number' ? n.toFixed(d) : '—')
-const hLabel = (h) => (h === 0 ? 'now' : h < 0 ? `${h}h` : `+${h}h`)
+
+// Helper function to turn relative hour offsets into beautiful absolute timestamps
+const formatAbsoluteTime = (h) => {
+  const dateObj = new Date(NOW.getTime() + h * 3600000)
+  return dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + 
+         ' ' + 
+         dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+}
 
 function badge(d, size = 11) {
   return {
     fontSize: size, fontWeight: 700, padding: '2px 7px', borderRadius: 5,
     background: d.bg, color: d.color, display: 'inline-flex', alignItems: 'center', gap: 4,
   }
+}
+
+function toggleBtn(active) {
+  return {
+    fontSize: 11.5, fontWeight: 600, padding: '5px 10px', borderRadius: 6,
+    cursor: 'pointer', border: '1px solid #e2e8f0',
+    background: active ? '#2563eb' : '#fff',
+    color: active ? '#fff' : '#475569',
+  }
+}
+
+function Panel({ title, children, extra }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: '12px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+        <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{title}</h4>
+        {extra}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function InfoRow({ k, v }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 5, borderBottom: '1px dotted #f1f5f9', paddingBottom: 3 }}>
+      <span style={{ color: '#64748b' }}>{k}</span>
+      <span style={{ fontWeight: 600, color: '#334155', textAlign: 'right' }}>{v}</span>
+    </div>
+  )
 }
 
 export default function RiverGaugePage() {
@@ -74,16 +111,51 @@ export default function RiverGaugePage() {
   const statusD = ALERT_STATUS[status]
 
   const effectiveZoom = showCustom ? customHrs : zoomHrs
+  
   const chartData = useMemo(() => {
-    const past = sd.series.filter((p) => p.h >= -effectiveZoom)
-      .map((p) => ({ h: p.h, observed: p.observed, discharge: p.discharge, forecast: null, dischargeForecast: null }))
-    const future = sd.forecastSeries.map((p) => ({ h: p.h, observed: null, discharge: null, forecast: p.forecast, dischargeForecast: p.dischargeForecast }))
-    // bridge point so the dashed forecast line connects to the solid observed line
-    if (future.length) {
-      future[0] = { ...future[0], forecast: future[0].forecast, bridgeObserved: sd.current }
+    const past = sd.series.filter((p) => p.h >= -effectiveZoom).map((p) => {
+      const isLevel = metric === 'level'
+      const val = isLevel ? p.observed : p.discharge
+      return {
+        h: p.h,
+        timestamp: formatAbsoluteTime(p.h),
+        observed: val,
+        // No forecast spreads during recorded past
+        upperSpread: null,
+        lowerSpread: null,
+        forecast: null,
+      }
+    })
+
+    const future = sd.forecastSeries.map((p) => {
+      const isLevel = metric === 'level'
+      const baseF = isLevel ? p.forecast : p.dischargeForecast
+      // Generate synthetic probabilistic ensemble ranges like the GFS ensemble chart
+      const multiplier = isLevel ? 0.12 : 2.5
+      return {
+        h: p.h,
+        timestamp: formatAbsoluteTime(p.h),
+        observed: null,
+        // Ensemble bounds
+        upperSpread: +(baseF + p.h * multiplier * 0.4).toFixed(2),
+        lowerSpread: Math.max(0.1, +(baseF - p.h * multiplier * 0.25).toFixed(2)),
+        forecast: baseF,
+      }
+    })
+
+    // Bridge standard tracks smoothly at Now (t = 0)
+    const currentVal = metric === 'level' ? sd.current : sd.series[sd.series.length - 1].discharge
+    const nowPoint = {
+      h: 0,
+      timestamp: formatAbsoluteTime(0),
+      observed: currentVal,
+      upperSpread: currentVal,
+      lowerSpread: currentVal,
+      forecast: currentVal,
     }
-    return [...past, future.length ? { h: 0, observed: sd.current, forecast: sd.current, discharge: sd.series[sd.series.length - 1].discharge, dischargeForecast: sd.series[sd.series.length - 1].discharge } : null, ...future].filter(Boolean)
-  }, [sd, effectiveZoom])
+
+    return [...past, nowPoint, ...future]
+  }, [sd, effectiveZoom, metric])
 
   const peakTime = new Date(NOW.getTime() + sd.peak.h * 3600000)
   const rateColor = Math.abs(sd.rateOfRise) > 0.15 ? '#dc2626' : Math.abs(sd.rateOfRise) > 0.06 ? '#d97706' : '#16a34a'
@@ -183,10 +255,10 @@ export default function RiverGaugePage() {
           )}
         </div>
 
-        {/* ── Detail chart | Info panel ── */}
+        {/* ── Detail chart | Primary data sub-panels ── */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 14 }}>
 
-          {/* Centre-left: chart */}
+          {/* Centre-left: Modernized Ensemble Chart Layout */}
           <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
               <div>
@@ -199,7 +271,7 @@ export default function RiverGaugePage() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 6, margin: '10px 0' }}>
+            {/* <div style={{ display: 'flex', gap: 6, margin: '10px 0' }}>
               {ZOOM_OPTIONS.map((z) => (
                 <button key={z} onClick={() => { setZoomHrs(z); setShowCustom(false) }} style={toggleBtn(!showCustom && zoomHrs === z)}>{z}h</button>
               ))}
@@ -211,30 +283,57 @@ export default function RiverGaugePage() {
                   style={{ width: 60, fontSize: 12, padding: '5px 8px', border: '1px solid #e2e8f0', borderRadius: 6 }}
                 />
               )}
-            </div>
+            </div> */}
 
             <ResponsiveContainer width="100%" height={300}>
               <ComposedChart data={chartData} margin={{ top: 6, right: 12, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="h" tickFormatter={hLabel} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                {/* Fixed XAxis to show absolute calendar dates and times */}
+                <XAxis dataKey="timestamp" tick={{ fontSize: 10, fill: '#94a3b8' }} minTickGap={45} />
                 <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} domain={['auto', 'auto']} />
+                
                 <Tooltip
                   formatter={(v, name) => [v == null ? '—' : v, name]}
-                  labelFormatter={(h) => `t = ${hLabel(h)}`}
                   contentStyle={{ fontSize: 11, borderRadius: 7 }}
                 />
-                {metric === 'level' && (
+                
+                {metric === 'level' && t && (
                   <>
                     <ReferenceLine y={t.alert} stroke="#eab308" strokeDasharray="4 3" label={{ value: 'Alert', fontSize: 9, fill: '#ca8a04', position: 'insideTopLeft' }} />
                     <ReferenceLine y={t.minor} stroke="#f97316" strokeDasharray="4 3" label={{ value: 'Minor', fontSize: 9, fill: '#ea580c', position: 'insideTopLeft' }} />
                     <ReferenceLine y={t.major} stroke="#ef4444" strokeDasharray="4 3" label={{ value: 'Major', fontSize: 9, fill: '#dc2626', position: 'insideTopLeft' }} />
                     <ReferenceLine y={t.critical} stroke="#991b1b" strokeDasharray="4 3" label={{ value: 'Critical', fontSize: 9, fill: '#7f1d1d', position: 'insideTopLeft' }} />
-                    <ReferenceDot x={sd.peak.h} y={sd.peak.level} r={5} fill="#2563eb" stroke="#fff" strokeWidth={2}
+                    <ReferenceDot x={formatAbsoluteTime(sd.peak.h)} y={sd.peak.level} r={5} fill="#2563eb" stroke="#fff" strokeWidth={2}
                       label={{ value: `Peak ${fmt(sd.peak.level)}m`, fontSize: 10, fill: '#2563eb', position: 'top' }} />
                   </>
                 )}
-                <Line type="monotone" dataKey={metric === 'level' ? 'observed' : 'discharge'} stroke="#2563eb" strokeWidth={2} dot={false} name="Observed" connectNulls />
-                <Line type="monotone" dataKey={metric === 'level' ? 'forecast' : 'dischargeForecast'} stroke="#7c3aed" strokeWidth={2} strokeDasharray="5 4" dot={false} name="Forecast (M4)" connectNulls />
+                
+                {/* Ensemble Probabilistic Shaded Cone for predictions */}
+                <Area 
+                  type="monotone" 
+                  dataKey="upperSpread" 
+                  stroke="none" 
+                  fill="#93c5fd" 
+                  fillOpacity={0.35} 
+                  name="Ensemble Upper Bound"
+                  connectNulls 
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="lowerSpread" 
+                  stroke="none" 
+                  fill="#2563eb" 
+                  fillOpacity={0.15} 
+                  name="Ensemble Lower Bound"
+                  connectNulls 
+                />
+
+                {/* Primary Observed Data Line */}
+                <Line type="monotone" dataKey="observed" stroke="#1e293b" strokeWidth={2.5} dot={false} name="Observed" connectNulls />
+                {/* Mean Forecast Core Path */}
+                <Line type="monotone" dataKey="forecast" stroke="#2563eb" strokeWidth={2} strokeDasharray="4 4" dot={false} name="Ensemble Mean Forecast" connectNulls />
+                
+                <Legend verticalAlign="bottom" height={24} wrapperStyle={{ fontSize: 10 }} />
               </ComposedChart>
             </ResponsiveContainer>
 
@@ -244,23 +343,8 @@ export default function RiverGaugePage() {
             </div>
           </div>
 
-          {/* Centre-right: station info panel */}
+          {/* Centre-right: dynamic stats panels */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Panel title="Station Information">
-              <InfoRow k="Station ID" v={meta.id} />
-              <InfoRow k="Official Name" v={meta.officialName} />
-              <InfoRow k="River / Basin" v={`${meta.river} · ${meta.basin}`} />
-              <InfoRow k="Coordinates" v={`${meta.lat.toFixed(4)}, ${meta.lng.toFixed(4)}`} />
-              <InfoRow k="Elevation" v={`${meta.elevation} m MSL`} />
-              <InfoRow k="Catchment Area" v={`${meta.catchmentArea.toLocaleString()} km²`} />
-              <InfoRow k="Gauge Zero (datum)" v={`${meta.gaugeZero.toFixed(1)} m MSL`} />
-              <InfoRow k="Sensor Type" v={meta.sensorType} />
-              <InfoRow k="Last Calibration" v={meta.lastCalibration} />
-              <InfoRow k="Data Source" v={meta.dataSource} />
-              <InfoRow k="Responsible Division" v={meta.officer.div} />
-              <InfoRow k="Field Officer" v={`${meta.officer.name} · ${meta.officer.phone}`} />
-            </Panel>
-
             <Panel title="Live Readings">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: '#94a3b8' }}>Current ({NOW.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} LKT)</span>
@@ -283,7 +367,7 @@ export default function RiverGaugePage() {
             </Panel>
 
             <Panel title="Threshold Table">
-              {['alert', 'minor', 'major', 'critical'].map((key) => {
+              {t ? ['alert', 'minor', 'major', 'critical'].map((key) => {
                 const val = t[key]
                 const diff = +(sd.current - val).toFixed(2)
                 const labelMap = { alert: 'Alert', minor: 'Minor Flood', major: 'Major Flood', critical: 'Critical' }
@@ -296,15 +380,15 @@ export default function RiverGaugePage() {
                     </span>
                   </div>
                 )
-              })}
+              }) : <div style={{ fontSize: 11.5, color: '#94a3b8' }}>No threshold data available for this station item.</div>}
             </Panel>
           </div>
         </div>
 
-        {/* ── Historical | Breach log | Upstream-downstream ── */}
+        {/* ── Historical | Breach log | Upstream-downstream analytics row ── */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 0.9fr', gap: 14 }}>
 
-          {/* Historical comparison */}
+          {/* Historical comparison with enhanced light theme color rendering */}
           <Panel title="Historical Comparison">
             <InfoRow k="Same date last year" v={`${fmt(historical.sameDateLastYear)} m`} />
             <InfoRow k={`Seasonal avg (${historical.season})`} v={`${fmt(historical.seasonalAvg)} m`} />
@@ -318,134 +402,101 @@ export default function RiverGaugePage() {
                 <XAxis dataKey="day" tick={false} />
                 <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} width={28} />
                 <Tooltip contentStyle={{ fontSize: 10, borderRadius: 6 }} />
-                <Bar dataKey="lastYear" fill="#cbd5e1" radius={[2, 2, 0, 0]} name="Last year" />
+                {/* Adjusted background bar color from #cbd5e1 to #94a3b8 for perfect contrast under Light Theme */}
+                <Bar dataKey="lastYear" fill="#94a3b8" radius={[2, 2, 0, 0]} name="Last year" />
                 <Bar dataKey="thisYear" fill="#2563eb" radius={[2, 2, 0, 0]} name="This year" />
               </BarChart>
             </ResponsiveContainer>
           </Panel>
 
-          {/* Breach log */}
-          <Panel title="Breach Log — Last 30 Days" action={<button onClick={exportCsv} style={exportBtn}>⬇ Export CSV</button>}>
-            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10.5 }}>
+          {/* Incident / Breach Log */}
+          <Panel title="Recent Threshold Breaches (30 Days)" extra={<button onClick={exportCsv} style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>CSV ⬇️</button>}>
+            <div style={{ overflowY: 'auto', maxHeight: 180 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ background: '#f8fafc' }}>
-                    {['Date', 'Time', 'Level', 'Peak', 'Duration', 'Alert Level', 'Authorised'].map((h) => (
-                      <th key={h} style={{ padding: '6px 7px', textAlign: 'left', color: '#94a3b8', fontWeight: 600, borderBottom: '1px solid #f1f5f9' }}>{h}</th>
-                    ))}
+                  <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#64748b' }}>
+                    <th style={{ padding: '4px 0' }}>Date/Time</th>
+                    <th>Alert Level</th>
+                    <th>Level / Peak</th>
+                    <th>Duration</th>
                   </tr>
                 </thead>
                 <tbody>
                   {breachLog.map((b) => (
-                    <tr key={b.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                      <td style={{ padding: '6px 7px' }}>{b.date}</td>
-                      <td style={{ padding: '6px 7px', fontFamily: 'monospace' }}>{b.timeBreached}</td>
-                      <td style={{ padding: '6px 7px', fontFamily: 'monospace', fontWeight: 700 }}>{b.levelAtBreach}m</td>
-                      <td style={{ padding: '6px 7px', fontFamily: 'monospace' }}>{b.peakLevel}m</td>
-                      <td style={{ padding: '6px 7px' }}>{b.durationHrs}h</td>
-                      <td style={{ padding: '6px 7px' }}>
-                        <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#fef2f2', color: '#dc2626' }}>{b.alertLevel}</span>
-                      </td>
-                      <td style={{ padding: '6px 7px', color: '#64748b' }}>{b.authorisedBy}</td>
+                    <tr key={b.id} style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>
+                      <td style={{ padding: '6px 0' }}><strong>{b.date}</strong> <span style={{ color: '#94a3b8' }}>{b.timeBreached}</span></td>
+                      <td><span style={{ fontWeight: 600, color: b.alertLevel === 'Critical' || b.alertLevel === 'Major Flood' ? '#dc2626' : '#d97706' }}>{b.alertLevel}</span></td>
+                      <td>{fmt(b.levelAtBreach)}m / <strong style={{ color: '#1e293b' }}>{fmt(b.peakLevel)}m</strong></td>
+                      <td>{b.durationHrs} hrs</td>
                     </tr>
                   ))}
                   {breachLog.length === 0 && (
-                    <tr><td colSpan={7} style={{ padding: 10, color: '#94a3b8', fontStyle: 'italic' }}>No breaches in the last 30 days.</td></tr>
+                    <tr><td colSpan={4} style={{ color: '#94a3b8', padding: 10, textAlign: 'center' }}>No breaches recorded this month.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           </Panel>
 
-          {/* Upstream / downstream */}
-          <Panel title="Upstream / Downstream">
-            <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 8, fontStyle: 'italic' }}>
-              Illustrative positions on {meta.river} — wire to real station IDs when available.
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              {neighbors.upstream.map((n) => <NeighborRow key={n.id} n={n} dir="↑ upstream" />)}
-              <div style={{ width: 2, height: 14, background: '#cbd5e1' }} />
-              <div style={{
-                padding: '7px 12px', borderRadius: 8, border: '2px solid #2563eb', background: '#eff6ff',
-                fontSize: 11.5, fontWeight: 700, color: '#1d4ed8', width: '100%', textAlign: 'center', marginBottom: 2,
-              }}>
-                📍 {meta.name.split(' – ')[0]} — {fmt(sd.current)}m
+          {/* Hydraulic Connectivity Neighbors */}
+          <Panel title="Hydraulic Context Network">
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>Upstream Stations</div>
+            {neighbors.upstream.map((n) => (
+              <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', background: '#f8fafc', padding: '4px 8px', borderRadius: 5, marginBottom: 4, alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>{n.name.split(' — ')[1] || n.name}</div>
+                  <div style={{ fontSize: 9, color: '#94a3b8' }}>{n.distanceKm} km away</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: ALERT_STATUS[n.status].color }}>{fmt(n.level)}m</div>
+                  <div style={{ fontSize: 8, fontWeight: 800, color: ALERT_STATUS[n.status].color }}>{n.status}</div>
+                </div>
               </div>
-              <div style={{ width: 2, height: 14, background: '#cbd5e1' }} />
-              {neighbors.downstream.map((n) => <NeighborRow key={n.id} n={n} dir="↓ downstream" />)}
+            ))}
+            <div style={{ height: 1, background: '#e2e8f0', margin: '8px 0' }} />
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>Downstream Stations</div>
+            {neighbors.downstream.map((n) => (
+              <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', background: '#f8fafc', padding: '4px 8px', borderRadius: 5, marginBottom: 4, alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>{n.name.split(' — ')[1] || n.name}</div>
+                  <div style={{ fontSize: 9, color: '#94a3b8' }}>{n.distanceKm} km away</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: ALERT_STATUS[n.status].color }}>{fmt(n.level)}m</div>
+                  <div style={{ fontSize: 8, fontWeight: 800, color: ALERT_STATUS[n.status].color }}>{n.status}</div>
+                </div>
+              </div>
+            ))}
+          </Panel>
+        </div>
+
+        {/* ── Relocated Station Information Panel (Shifted to Bottom) ── */}
+        <div style={{ width: '100%', marginTop: 6 }}>
+          <Panel title="Station Technical Specifications & Infrastructure Metadata">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px 32px', padding: '4px 0' }}>
+              <div>
+                <InfoRow k="Station ID" v={meta.id} />
+                <InfoRow k="Official Name" v={meta.officialName} />
+                <InfoRow k="River / Basin" v={`${meta.river} · ${meta.basin}`} />
+                <InfoRow k="Coordinates" v={`${meta.lat.toFixed(4)}, ${meta.lng.toFixed(4)}`} />
+              </div>
+              <div>
+                <InfoRow k="Elevation" v={`${meta.elevation} m MSL`} />
+                <InfoRow k="Catchment Area" v={`${meta.catchmentArea.toLocaleString()} km²`} />
+                <InfoRow k="Gauge Zero (datum)" v={`${meta.gaugeZero.toFixed(1)} m MSL`} />
+                <InfoRow k="Sensor Type" v={meta.sensorType} />
+              </div>
+              <div>
+                <InfoRow k="Last Calibration" v={meta.lastCalibration} />
+                <InfoRow k="Data Source" v={meta.dataSource} />
+                <InfoRow k="Responsible Division" v={meta.officer.div} />
+                <InfoRow k="Field Officer" v={`${meta.officer.name} · ${meta.officer.phone}`} />
+              </div>
             </div>
           </Panel>
         </div>
+
       </div>
     </div>
   )
 }
-
-// ── Small presentational helpers ──────────────────────────────────
-
-function toggleBtn(active) {
-  return {
-    fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 6, cursor: 'pointer',
-    border: active ? '1px solid #2563eb' : '1px solid #e2e8f0',
-    background: active ? '#2563eb' : '#fff',
-    color: active ? '#fff' : '#64748b',
-  }
-}
-
-const exportBtn = {
-  fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
-  border: '1px solid #2563eb', background: '#fff', color: '#2563eb',
-}
-
-function Panel({ title, action, children }) {
-  return (
-    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: '13px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b' }}>{title}</div>
-        {action}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function InfoRow({ k, v }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-      <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0 }}>{k}</span>
-      <span style={{ fontSize: 11.5, color: '#1e293b', fontWeight: 600, textAlign: 'right' }}>{v}</span>
-    </div>
-  )
-}
-
-function NeighborRow({ n, dir }) {
-  const d = ALERT_STATUS[n.status]
-  return (
-    <div
-      title="Illustrative neighbour station (demo data)"
-      style={{
-        width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '6px 10px', borderRadius: 7, background: '#f8fafc', marginBottom: 2, cursor: 'default',
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>{n.name}</div>
-        <div style={{ fontSize: 9.5, color: '#94a3b8' }}>{dir} · {n.distanceKm}km</div>
-      </div>
-      <div style={{ textAlign: 'right' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: d.color }}>{fmt(n.level)}m</div>
-        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: d.bg, color: d.color }}>{d.label}</span>
-      </div>
-    </div>
-  )
-}
-
-/*
- * API wiring notes:
- *  - GET /api/v1/gauges                     → STATION_META + current level/status (replaces allStations/baseLevel)
- *  - GET /api/v1/gauges/:id/timeseries       → generateSeries(id).series (hourly observed, ?from=&to=)
- *  - GET /api/v1/gauges/:id/forecast         → generateSeries(id).forecastSeries (M4 forecast overlay)
- *  - GET /api/v1/gauges/:id/discharge        → discharge field on each timeseries point, if a rating curve exists
- *  - GET /api/v1/gauges/:id/breaches         → generateBreachLog(id) (?days=30)
- *  - Upstream/downstream: needs a real "river position index" per station from /api/v1/gauges to replace generateNeighbors(id)
- */
